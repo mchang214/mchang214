@@ -1,0 +1,109 @@
+<%- include('partials/header') %>
+
+<% if (typeof message !== 'undefined' && message && message.length > 0) { %>
+    <div class="container mt-3">
+        <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i> <%= message %>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    </div>
+<% } %>
+
+<div class="container my-5">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-6">
+            <h2 class="fw-bold"><i class="bi bi-collection-play me-2 text-primary"></i>Quản lý bài đăng</h2>
+            <p class="text-muted">Hệ thống có <span class="badge bg-primary"><%= rooms.length %></span> bài</p>
+        </div>
+        <div class="col-md-6 text-md-end">
+            <a href="/admin/add" class="btn btn-primary rounded-pill px-4 shadow-sm">
+                <i class="bi bi-plus-lg me-2"></i>Thêm bài mới
+            </a>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-5">
+            <form action="/admin" method="GET" class="input-group shadow-sm">
+                <input type="text" name="search" class="form-control border-0 px-3" placeholder="Mã phòng hoặc tiêu đề..." value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
+                <button class="btn btn-primary px-4" type="submit">Tìm</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Thông tin phòng</th>
+                        <th>Mã bài</th> 
+                        <th>Giá & Diện tích</th>
+                        <th>Khu vực</th>
+                        <th class="text-center">Trạng thái</th>
+                        <th class="text-end pe-4">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% if (rooms && rooms.length > 0) { %>
+                        <% rooms.forEach(room => { %>
+                        <tr>
+                            <td class="ps-4">
+                                <div class="d-flex align-items-center">
+                                    <% if(room.images && room.images.length > 0) { %>
+                                        <a href="/room/<%= room._id %>">
+                                            <img src="<%= room.images[0] %>" class="rounded-3 me-3" style="width: 60px; height: 45px; object-fit: cover;">
+                                        </a>
+                                    <% } %>
+                                    <div>
+                                        <a href="/room/<%= room._id %>" class="text-decoration-none">
+                                            <div class="fw-bold text-dark hover-primary"><%= room.title %></div>
+                                        </a>
+                                        <small class="text-muted text-uppercase" style="font-size: 0.75rem;"><%= room.type %></small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <a href="/room/<%= room._id %>" class="text-decoration-none">
+                                    <span class="badge bg-light text-primary border border-primary-subtle px-2 py-1" style="cursor: pointer;">
+                                        <%= room.code %>
+                                    </span>
+                                </a>
+                            </td>
+                            
+                            <td>
+                                <div class="text-danger fw-bold"><%= (room.price || 0).toLocaleString() %> đ</div>
+                                <small class="text-muted"><%= room.area %> m²</small>
+                            </td>
+                            <td><%= room.location ? room.location.split(',')[0] : 'Chưa rõ' %></td>
+                            <td class="text-center">
+                                <span class="badge rounded-pill <%= room.status ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' %> px-3 py-2">
+                                    <%= room.status ? 'Còn trống' : 'Đã thuê' %>
+                                </span>
+                            </td>
+                            <td class="text-end pe-4">
+                                <div class="btn-group shadow-sm border rounded-pill overflow-hidden bg-white">
+                                    <a href="/admin/toggle/<%= room._id %>" class="btn btn-sm btn-white border-0 px-3" title="Đổi trạng thái"><i class="bi <%= room.status ? 'bi-check-circle text-success' : 'bi-x-circle text-danger' %>"></i></a>
+                                    <a href="/admin/edit/<%= room._id %>" class="btn btn-sm btn-white border-0 px-3 border-start" title="Sửa bài"><i class="bi bi-pencil-square text-primary"></i></a>
+                                    <a href="/admin/delete/<%= room._id %>" class="btn btn-sm btn-white border-0 px-3 border-start" onclick="return confirm('Xóa bài này?')" title="Xóa bài"><i class="bi bi-trash3 text-danger"></i></a>
+                                </div>
+                            </td>
+                        </tr>
+                        <% }) %>
+                    <% } else { %>
+                        <tr><td colspan="6" class="text-center py-5 text-muted">Không tìm thấy bài viết nào.</td></tr>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .hover-primary:hover {
+        color: #0d6efd !important;
+        text-decoration: underline;
+    }
+</style>
+
+<%- include('partials/footer') %>

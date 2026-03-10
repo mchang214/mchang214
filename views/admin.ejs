@@ -1,0 +1,178 @@
+<%- include('partials/header') %>
+
+<div class="container mt-4 pb-5">
+    <div class="bg-white p-3 rounded shadow-sm mb-4 d-flex justify-content-between align-items-center">
+        <h3 class="fw-bold mb-0 text-primary"><i class="bi bi-speedometer2 me-2"></i>QUẢN TRỊ HỆ THỐNG</h3>
+        <span class="badge bg-light text-dark border"><i class="bi bi-person-circle me-1"></i> Mode: Admin</span>
+    </div>
+
+    <div class="card shadow-sm mb-5 border-0 rounded-4 overflow-hidden">
+        <div class="card-header bg-primary text-white fw-bold py-3">
+            <i class="bi bi-pencil-square me-2"></i>
+            <%= editRoom ? 'CẬP NHẬT BÀI VIẾT: ' + editRoom.code : 'ĐĂNG BÀI MỚI' %>
+        </div>
+        <div class="card-body p-4 bg-white">
+            <form action="<%= editRoom ? '/admin/update/' + editRoom.id : '/admin/add' %>" method="POST" enctype="multipart/form-data" class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold small">Mã phòng</label>
+                    <input type="text" name="code" class="form-control bg-light" required placeholder="VD: PT01" value="<%= editRoom ? editRoom.code : '' %>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small">Tiêu đề bài viết</label>
+                    <input type="text" name="title" class="form-control bg-light" required value="<%= editRoom ? editRoom.title : '' %>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small">Loại phòng</label>
+                    <select name="type" id="roomType" class="form-select bg-light" onchange="toggleDirectionField()">
+                        <% ['Studio', '1N1K', '2N1K', 'Chung cư', 'Nguyên căn'].forEach(t => { %>
+                            <option value="<%= t %>" <%= editRoom && editRoom.type === t ? 'selected' : '' %>><%= t %></option>
+                        <% }) %>
+                    </select>
+                </div>
+
+                <div class="col-md-3" id="directionContainer" style="display: none;">
+                    <label class="form-label fw-bold text-primary small"><i class="bi bi-compass"></i> Hướng nhà</label>
+                    <select name="direction" id="directionField" class="form-select border-primary">
+                        <option value="">-- Chọn hướng --</option>
+                        <% ['Đông', 'Tây', 'Nam', 'Bắc', 'Đông Nam', 'Đông Bắc', 'Tây Nam', 'Tây Bắc'].forEach(d => { %>
+                            <option value="<%= d %>" <%= editRoom && editRoom.direction === d ? 'selected' : '' %>><%= d %></option>
+                        <% }) %>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small">Giá thuê (VNĐ)</label>
+                    <input type="number" name="price" class="form-control bg-light" required placeholder="3500000" value="<%= editRoom ? editRoom.price : '' %>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold small">Quận/Huyện</label>
+                    <select name="location" class="form-select bg-light">
+                        <% ['Ba Đình', 'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Hoàn Kiếm', 'Thanh Xuân', 'Hoàng Mai', 'Long Biên', 'Hà Đông', 'Tây Hồ', 'Nam Từ Liêm', 'Bắc Từ Liêm'].forEach(q => { %>
+                            <option value="<%= q %>" <%= editRoom && editRoom.location === q ? 'selected' : '' %>><%= q %></option>
+                        <% }) %>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold small">Diện tích (m²)</label>
+                    <input type="number" name="area" class="form-control bg-light" required value="<%= editRoom ? editRoom.area : '' %>">
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small">Ảnh bài đăng</label>
+                    <input type="file" name="images" class="form-control bg-light" <%= editRoom ? '' : 'required' %> multiple accept="image/*">
+                </div>
+                <div class="col-12">
+                    <label class="form-label fw-bold small">Mô tả chi tiết bài viết</label>
+                    <textarea name="description" class="form-control bg-light" rows="5" placeholder="Nhập tiện ích, phí dịch vụ..."><%= editRoom ? editRoom.description : '' %></textarea>
+                </div>
+                <div class="col-12 text-end pt-2">
+                    <% if(editRoom) { %>
+                        <a href="/admin" class="btn btn-light border px-4 rounded-pill me-2">HỦY</a>
+                        <button type="submit" class="btn btn-primary px-5 fw-bold rounded-pill shadow-sm">CẬP NHẬT THAY ĐỔI</button>
+                    <% } else { %>
+                        <button type="submit" class="btn btn-success px-5 fw-bold rounded-pill shadow-sm">ĐĂNG BÀI NGAY</button>
+                    <% } %>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <h4 class="mb-3 fw-bold text-dark"><i class="bi bi-list-ul me-2"></i>Danh sách bài đã đăng</h4>
+    <div class="table-responsive bg-white shadow-sm rounded-4 border overflow-hidden">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Mã</th>
+                    <th>Ảnh</th>
+                    <th>Thông tin chi tiết</th>
+                    <th>Giá thuê</th>
+                    <th>Trạng thái</th>
+                    <th class="text-center">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% if (rooms && rooms.length > 0) { %>
+                    <% rooms.forEach(room => { %>
+                        <tr>
+                            <td class="ps-3"><span class="badge bg-secondary opacity-75"><%= room.code || 'N/A' %></span></td>
+                            <td>
+                                <% if(room.images && room.images.length > 0) { %>
+                                    <img src="<%= room.images[0] %>" class="rounded shadow-sm" style="width: 70px; height: 50px; object-fit: cover;">
+                                <% } else { %>
+                                    <div class="bg-light rounded d-flex align-items-center justify-content-center" style="width: 70px; height: 50px;">
+                                        <i class="bi bi-image text-muted"></i>
+                                    </div>
+                                <% } %>
+                            </td>
+                            <td>
+                                <div class="fw-bold text-dark"><%= room.title %></div>
+                                <small class="text-muted">
+                                    <i class="bi bi-geo-alt"></i> <%= room.location %> | <i class="bi bi-house"></i> <%= room.type %>
+                                    <% if(room.direction) { %> 
+                                        | <i class="bi bi-compass"></i> <%= room.direction %>
+                                    <% } %>
+                                </small>
+                            </td>
+                            <td>
+                                <div class="text-danger fw-bold"><%= (room.price || 0).toLocaleString() %> đ</div>
+                                <small class="text-muted"><%= room.area %> m²</small>
+                            </td>
+                            <td>
+                                <span class="badge rounded-pill <%= room.status ? 'bg-success' : 'bg-danger' %>">
+                                    <%= room.status ? 'Còn trống' : 'Đã hết' %>
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm shadow-sm rounded-pill overflow-hidden">
+                                    <a href="/admin/toggle/<%= room.id %>" class="btn <%= room.status ? 'btn-outline-danger' : 'btn-outline-success' %>" title="Đổi trạng thái">
+                                        <i class="bi bi-power"></i>
+                                    </a>
+                                    <a href="/admin/edit/<%= room.id %>" class="btn btn-info text-white" title="Sửa">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a href="/admin/delete/<%= room.id %>" class="btn btn-danger" onclick="return confirm('Bạn có chắc muốn xóa bài này?')" title="Xóa">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    <% }) %>
+                <% } else { %>
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox display-4 d-block mb-2"></i>
+                            Chưa có bài đăng nào.
+                        </td>
+                    </tr>
+                <% } %>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function toggleDirectionField() {
+    const roomTypeSelect = document.getElementById('roomType');
+    const directionContainer = document.getElementById('directionContainer');
+    
+    if (!roomTypeSelect || !directionContainer) return;
+    const val = roomTypeSelect.value.trim();
+
+    if (val === "Chung cư" || val === "Nguyên căn") {
+        directionContainer.style.display = 'block';
+    } else {
+        directionContainer.style.display = 'none';
+        const directionField = document.getElementById('directionField');
+        if(directionField) directionField.value = "";
+    }
+}
+document.addEventListener('DOMContentLoaded', toggleDirectionField);
+</script>
+
+<style>
+    body { background-color: #f8f9fa; }
+    .table thead th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 15px 10px; }
+    .form-control:focus, .form-select:focus { border-color: #0066ff; box-shadow: 0 0 0 0.25rem rgba(0, 102, 255, 0.1); }
+</style>
+
+<%- include('partials/footer') %>

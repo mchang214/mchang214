@@ -1,0 +1,150 @@
+<%- include('partials/header') %>
+<script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold text-primary">
+            <i class="bi bi-calendar2-check-fill me-2"></i>Quản lý lịch hẹn khách
+        </h2>
+        <div>
+            <span class="badge bg-primary rounded-pill px-3 py-2">Tổng: <%= bookings.length %> yêu cầu</span>
+        </div>
+    </div>
+
+    <% 
+        const todayStr = new Date().toLocaleDateString('vi-VN');
+        const bookingsToday = bookings.filter(b => new Date(b.createdAt).toLocaleDateString('vi-VN') === todayStr);
+    %>
+    <div class="alert alert-warning border-0 shadow-sm d-flex align-items-center mb-4">
+        <i class="bi bi-bell-fill fs-4 me-3 text-danger"></i>
+        <div>
+            <strong>Thông báo hôm nay (<%= todayStr %>):</strong> 
+            Bạn đang có <span class="badge bg-danger rounded-pill"><%= bookingsToday.length %></span> yêu cầu mới.
+        </div>
+    </div>
+
+    <div class="card shadow border-0 rounded-3">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="bookingTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Khách hàng</th>
+                            <th>Ngày gửi</th>
+                            <th>Liên hệ</th>
+                            <th>Mã phòng</th>
+                            <th>Địa chỉ</th>
+                            <th>Giá phòng</th>
+                            <th>Giờ hẹn xem</th>
+                            <th class="text-center">Trạng thái (Khách)</th>
+                            <th class="text-center">Cập nhật (Admin)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (bookings && bookings.length > 0) { %>
+                            <% bookings.forEach(book => { %>
+                                <tr>
+                                    <td class="ps-4 fw-bold"><%= book.guestName %></td>
+                                    <td>
+                                        <small class="text-muted"><%= new Date(book.createdAt).toLocaleDateString('vi-VN') %></small>
+                                    </td>
+                                    <td>
+                                        <a href="tel:<%= book.guestPhone %>" class="text-decoration-none fw-bold text-danger">
+                                            <i class="bi bi-telephone-fill me-1"></i><%= book.guestPhone %>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <div class="badge bg-info text-dark">Mã: <%= book.roomCode %></div>
+                                    </td>
+                                    <td>
+                                        <div class="small text-muted text-wrap" style="max-width: 180px;">
+                                            <%= book.room ? book.room.location : 'Phòng đã xóa' %>
+                                        </div>
+                                    </td>
+                                    <td class="fw-bold text-danger">
+                                        <%= (book.room && book.room.price) ? book.room.price.toLocaleString('vi-VN') : '0' %> đ
+                                    </td>
+                                    <td>
+                                        <div class="text-dark small"><%= new Date(book.appointmentTime).toLocaleString('vi-VN') %></div>
+                                    </td>
+                                    
+                                    <td class="text-center">
+                                        <% if (book.status === 'Chờ xác nhận') { %>
+                                            <span class="badge rounded-pill bg-warning text-dark px-3">
+                                                <i class="bi bi-clock-history me-1"></i>Chờ xác nhận
+                                            </span>
+                                        <% } else { %>
+                                            <span class="badge rounded-pill bg-success px-3">
+                                                <i class="bi bi-check-circle-fill me-1"></i>Đã xác nhận
+                                            </span>
+                                        <% } %>
+                                    </td>
+
+                                    <td class="text-center">
+                                        <% if (book.status === 'Chờ xác nhận') { %>
+                                            <button class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" 
+                                                    onclick="confirmBooking('<%= book._id %>', 'Đã xác nhận')">
+                                                Xác nhận ngay
+                                            </button>
+                                        <% } else { %>
+                                            <select class="form-select form-select-sm border-primary text-primary mx-auto" 
+                                                    style="width: 150px; font-size: 0.8rem;"
+                                                    onchange="confirmBooking('<%= book._id %>', this.value)">
+                                                <option value="Đã xác nhận" <%= book.status === 'Đã xác nhận' ? 'selected' : '' %>>-- Tiến độ --</option>
+                                                <option value="Đã gửi SĐT" <%= book.status === 'Đã gửi SĐT' ? 'selected' : '' %>>📞 Đã gửi SĐT</option>
+                                                <option value="Đã đi xem phòng" <%= book.status === 'Đã đi xem phòng' ? 'selected' : '' %>>🏠 Đã đi xem</option>
+                                                <option value="Đã chốt" <%= book.status === 'Đã chốt' ? 'selected' : '' %>>✅ Đã chốt</option>
+                                            </select>
+                                        <% } %>
+                                    </td>
+                                </tr>
+                            <% }) %>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+function exportToExcel() {
+    let table = document.getElementById("bookingTable");
+    let wb = XLSX.utils.table_to_book(table, { sheet: "LichHen" });
+    XLSX.writeFile(wb, "Danh_Sach_Lich_Hen.xlsx");
+}
+
+async function confirmBooking(bookingId, selectedStatus) {
+    const isFirstConfirm = (selectedStatus === 'Đã xác nhận');
+    const result = await Swal.fire({
+        title: isFirstConfirm ? 'Xác nhận lịch hẹn?' : 'Cập nhật tiến độ?',
+        text: isFirstConfirm ? "Bạn đã liên hệ với khách hàng này chưa?" : `Chuyển trạng thái sang: ${selectedStatus}`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#0d6efd',
+        confirmButtonText: 'Đồng ý',
+        cancelButtonText: 'Hủy'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const response = await fetch(`/admin/bookings/confirm/${bookingId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: selectedStatus }) 
+            });
+            const data = await response.json();
+            if (data.success) {
+                Swal.fire({ title: 'Thành công!', icon: 'success', timer: 800, showConfirmButton: false })
+                .then(() => location.reload());
+            }
+        } catch (error) {
+            Swal.fire('Lỗi!', 'Không thể kết nối máy chủ', 'error');
+        }
+    } else {
+        if (!isFirstConfirm) location.reload();
+    }
+}
+</script>
+<%- include('partials/footer') %>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phòng trọ / CCMN Hà Nội</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { transition: 0.3s; border: none; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
+        .card-img-top { height: 230px; object-fit: cover; transition: 0.5s; }
+        .card:hover .card-img-top { transform: scale(1.05); }
+        .save-btn { 
+            position: absolute; top: 10px; right: 10px; z-index: 10;
+            background: rgba(255,255,255,0.9); border-radius: 50%; width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center; border: none; transition: 0.3s;
+        }
+        .save-btn:hover { background: #fff; transform: scale(1.1); color: #dc3545; }
+        .tooltip-text { font-size: 10px; display: none; position: absolute; bottom: -15px; width: 80px; text-align: center; }
+        .save-btn:hover .tooltip-text { display: block; }
+
+        .custom-range {
+            --value: 100%;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #dee2e6;
+            border-radius: 5px;
+            outline: none;
+        }
+        .custom-range::-webkit-slider-runnable-track {
+            background: linear-gradient(to right, #0d6efd 0%, #0d6efd var(--value), #dee2e6 var(--value), #dee2e6 100%);
+            height: 8px;
+            border-radius: 5px;
+        }
+        .custom-range::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #0d6efd;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            margin-top: -5px;
+        }
+    </style>
+</head>
+<body>
+
+<%- include('partials/navbar') %>
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb bg-white p-2 rounded shadow-sm">
+            <li class="breadcrumb-item"><a href="/" class="text-decoration-none">Trang chủ</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Danh sách phòng</li>
+        </ol>
+    </nav>
+
+    <h1 class="text-center mb-4 fw-bold text-primary">Tìm kiếm phòng trọ quanh Hà Nội</h1>
+     
+    <form class="row g-3 mb-5 p-4 bg-white shadow rounded-4 border-0" method="GET" action="/">
+        <div class="col-md-3">
+            <label class="form-label fw-bold text-secondary small"><i class="bi bi-geo-alt"></i> Khu vực</label>
+            <select name="location" class="form-select border-2">
+                <option value="">-- Tất cả Quận/Huyện --</option>
+                <% ['Ba Đình', 'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Hoàn Kiếm', 'Thanh Xuân', 'Hoàng Mai', 'Long Biên', 'Hà Đông', 'Tây Hồ', 'Nam Từ Liêm', 'Bắc Từ Liêm'].forEach(q => { %>
+                    <option value="<%= q %>" <%= query.location === q ? 'selected' : '' %>><%= q %></option>
+                <% }) %>
+            </select>
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label fw-bold text-secondary small"><i class="bi bi-compass"></i> Tra hướng</label>
+            <select name="direction" class="form-select">
+                <option value="">--Tất cả hướng--</option>
+                <% ['Đông', 'Tây', 'Nam', 'Bắc', 'Đông Nam', 'Đông Bắc', 'Tây Nam', 'Tây Bắc'].forEach(d => { %>
+                    <option value="<%= d %>" <%= query.direction === d ? 'selected' : '' %>><%= d %></option>
+                <% }) %>
+            </select>
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label fw-bold text-secondary small"><i class="bi bi-rulers"></i> DT từ (m²)</label>
+            <input type="number" name="minArea" class="form-control border-2" value="<%= query.minArea || '' %>" placeholder="Ví dụ: 25">
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label fw-bold small">Loại phòng</label>
+            <select name="type" class="form-select border-2">
+                <option value="">Tất cả loại</option>
+                <option value="Studio" <%= query.type === 'Studio' ? 'selected' : '' %>>Studio</option>
+                <option value="1N1K" <%= query.type === '1N1K' ? 'selected' : '' %>>1N1K</option>
+                <option value="2N1K" <%= query.type === '2N1K' ? 'selected' : '' %>>2N1K</option>
+                <option value="Chung cư" <%= query.type === 'Chung cư' ? 'selected' : '' %>>Chung cư</option>
+                <option value="Nguyên căn" <%= query.type === 'Nguyên căn' ? 'selected' : '' %>>Nguyên căn</option>
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label class="form-label fw-bold small">Giá tối đa: <span id="priceValue" class="text-primary">50.000.000</span> VNĐ</label>
+            <input type="range" name="maxPrice" class="form-range custom-range" 
+                min="0" max="50000000" step="500000" 
+                value="<%= query.maxPrice || 50000000 %>" 
+                oninput="updatePrice(this.value)">
+        </div>
+
+        <div class="col-md-9">
+            <div class="input-group">
+                <span class="input-group-text bg-light border-2"><i class="bi bi-search"></i></span>
+                <input type="text" name="keyword" class="form-control border-2" 
+                       placeholder="Tìm theo từ khóa: điều hòa, ban công..."
+                       value="<%= query.keyword || '' %>">
+            </div>
+        </div>
+
+        <div class="col-md-3 d-grid gap-2 d-flex">
+            <button type="submit" class="btn btn-primary fw-bold flex-grow-1 rounded-3">
+                <i class="bi bi-filter"></i> Áp Dụng
+            </button>
+            <a href="/" class="btn btn-outline-secondary rounded-3 px-3">
+                <i class="bi bi-arrow-clockwise"></i>
+            </a>
+        </div>
+    </form>
+
+    <div class="row g-4 mb-5">
+    <% if (rooms.length > 0) { %>
+        <% rooms.forEach(room => { %>
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm rounded-4 overflow-hidden position-relative">
+                    <button class="save-btn shadow-sm" onclick="toggleSaveRoom(event, '<%= room._id %>')">
+                        <i id="heart-icon-<%= room._id %>" 
+                        class="bi <%= (locals.user && locals.user.savedRooms && locals.user.savedRooms.some(id => id.toString() === room._id.toString())) ? 'bi-heart-fill text-danger' : 'bi-heart text-secondary' %> fs-5"
+                        style="transition: all 0.3s ease;">
+                        </i>
+                        <span class="tooltip-text text-dark fw-bold">Yêu thích</span>
+                    </button>
+                    <div class="position-relative">
+                        <a href="/room/<%= room._id %>">
+                            <% if(room.images && room.images.length > 0) { %>
+                                <img src="<%= room.images[0] %>" class="card-img-top" alt="<%= room.title %>">
+                            <% } else { %>
+                                <div class="bg-light text-muted d-flex flex-column align-items-center justify-content-center" style="height:230px">
+                                    <i class="bi bi-image fs-1"></i>
+                                    <span>Không có ảnh</span>
+                                </div>
+                            <% } %>
+                        </a>
+                        <div class="position-absolute top-0 start-0 m-2">
+                            <span class="badge <%= room.status ? 'bg-success' : 'bg-danger' %> shadow-sm">
+                                <%= room.status ? 'Còn trống' : 'Đã thuê' %>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="card-body p-4 d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-primary fw-bold">MÃ: <%= room.code %></small>
+                            <small class="text-muted"><i class="bi bi-rulers"></i> <%= room.area %> m²</small>
+                        </div>
+                        <h5 class="card-title fw-bold mb-2">
+                            <a href="/room/<%= room._id %>" class="text-decoration-none text-dark hover-title">
+                                <%= room.title %>
+                            </a>
+                        </h5>
+                        <p class="text-danger fw-bold fs-5 mb-2"><%= room.price.toLocaleString('vi-VN') %> đ/tháng</p>
+                        <p class="text-muted small mb-1 text-truncate">
+                            <i class="bi bi-geo-alt-fill text-danger"></i> <%= room.location %>
+                        </p>
+
+                        <% if (room.direction && room.direction.trim() !== "") { %>
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-compass text-primary"></i> 
+                                <span class="fw-medium">Hướng: <%= room.direction %></span>
+                            </p>
+                        <% } else { %>
+                            <div style="height: 24px;" class="mb-3"></div>
+                        <% } %>
+                        <div class="mt-auto">
+                            <a href="/room/<%= room._id %>" class="btn btn-outline-primary w-100 rounded-3 fw-bold py-2">Xem Chi Tiết</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <% }) %>
+    <% } else { %>
+        <div class="col-12 text-center py-5 bg-white shadow-sm rounded-4">
+            <i class="bi bi-emoji-frown fs-1 text-muted"></i>
+            <h4 class="mt-3 text-muted">Không tìm thấy phòng phù hợp</h4>
+            <a href="/" class="btn btn-primary mt-3">Quay lại tất cả phòng</a>
+        </div>
+    <% } %>
+    </div>
+</div>
+
+<%- include('partials/footer') %>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    function updatePrice(val) {
+        const display = document.getElementById('priceValue');
+        if(display) display.innerText = Number(val).toLocaleString('vi-VN');
+        
+        const percent = (val / 50000000) * 100;
+        const slider = document.querySelector('.custom-range');
+        if(slider) slider.style.setProperty('--value', percent + '%');
+    }
+    const initialPrice = Number('<%= query.maxPrice %>') || 50000000;
+    updatePrice(initialPrice);
+
+    // Toast configuration
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2000,
+        timerProgressBar: true
+    });
+
+    async function toggleSaveRoom(event, roomId) {
+        event.preventDefault();
+        const heartIcon = document.getElementById(`heart-icon-${roomId}`);
+
+        try {
+            const response = await fetch('/save-room/' + roomId, { method: 'POST' });
+            
+            if (response.status === 401) {
+                localStorage.setItem('pendingSaveRoom', roomId);
+
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Yêu cầu đăng nhập',
+                    text: 'Hệ thống sẽ tự động lưu phòng này sau khi bạn đăng nhập thành công!',
+                    showCancelButton: true,
+                    confirmButtonText: 'Đăng nhập ngay',
+                    cancelButtonText: 'Để sau',
+                    confirmButtonColor: '#0d6efd'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.location.href = '/login';
+                    }
+                });
+                return;
+            }
+
+            const result = await response.json();
+            if (result.success) {
+                if (result.saved) {
+                    heartIcon.classList.replace('bi-heart', 'bi-heart-fill');
+                    heartIcon.classList.add('text-danger');
+                    heartIcon.classList.remove('text-secondary');
+                    heartIcon.style.transform = 'scale(1.3)';
+                    setTimeout(() => heartIcon.style.transform = 'scale(1)', 200);
+                    Toast.fire({ icon: 'success', title: 'Đã thêm vào mục đã lưu' });
+                } else {
+                    heartIcon.classList.replace('bi-heart-fill', 'bi-heart');
+                    heartIcon.classList.remove('text-danger');
+                    heartIcon.classList.add('text-secondary');
+                    Toast.fire({ icon: 'info', title: 'Đã bỏ lưu phòng' });
+                }
+            }
+        } catch (error) {
+            console.error("Lỗi:", error);
+        }
+    }
+
+    // Tự động lưu khi quay lại trang sau khi đăng nhập thành công
+    document.addEventListener('DOMContentLoaded', async () => {
+        const pendingRoomId = localStorage.getItem('pendingSaveRoom');
+        const isLoggedIn = Boolean(JSON.parse('<%- locals.user ? "true" : "false" %>'));
+
+        if (isLoggedIn && pendingRoomId) {
+            try {
+                const response = await fetch('/save-room/' + pendingRoomId, { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    localStorage.removeItem('pendingSaveRoom'); 
+                    
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: 'success',
+                        title: 'Hệ thống đã tự động lưu phòng bạn đã chọn!',
+                        showConfirmButton: false,
+                        timer: 3500
+                    });
+                    
+                    const heartIcon = document.getElementById(`heart-icon-${pendingRoomId}`);
+                    if (heartIcon && result.saved) {
+                        heartIcon.classList.replace('bi-heart', 'bi-heart-fill');
+                        heartIcon.classList.add('text-danger');
+                        heartIcon.classList.remove('text-secondary');
+                    }
+                }
+            } catch (err) {
+                console.error("Lỗi tự động lưu:", err);
+            }
+        }
+    });
+</script>
+</body>
+</html>

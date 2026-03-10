@@ -1,0 +1,164 @@
+<%- include('partials/header') %>
+
+<div class="container my-5">
+    <div class="max-width-700 mx-auto">
+        <div class="d-flex align-items-center mb-4">
+            <a href="/admin" class="btn btn-sm btn-outline-secondary rounded-circle me-3"><i class="bi bi-arrow-left"></i></a>
+            <h2 class="fw-bold mb-0"><%= (typeof editRoom !== 'undefined' && editRoom) ? 'Chỉnh sửa bài viết' : 'Đăng tin mới' %></h2>
+        </div>
+
+        <% 
+            // Khai báo an toàn để tránh lỗi undefined khi đăng bài mới
+            const isEdit = (typeof editRoom !== 'undefined' && editRoom);
+            const roomData = isEdit ? editRoom : {};
+        %>
+
+        <form action="<%= isEdit ? '/admin/edit/' + roomData._id : '/admin/add' %>" 
+              method="POST" 
+              enctype="multipart/form-data" 
+              class="row g-4">
+            
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4 p-4">
+                    <h5 class="fw-bold mb-3 text-primary">Thông tin cơ bản</h5>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Mã phòng (ví dụ: 612)</label>
+                            <input type="text" name="code" class="form-control bg-light border-0 py-2" 
+                                   placeholder="P.101" required 
+                                   value="<%= roomData.code || '' %>">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-bold">Tiêu đề tin</label>
+                            <input type="text" name="title" class="form-control bg-light border-0 py-2" 
+                                   placeholder="Ví dụ: Phòng trọ Cầu Giấy full đồ..." required
+                                   value="<%= roomData.title || '' %>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Giá thuê (triệu/tháng)</label>
+                            <div class="input-group">
+                                <input type="text" name="price" class="form-control bg-light border-0 py-2" 
+                                       placeholder="Ví dụ: 3.5" required
+                                       value="<%= isEdit ? (roomData.price / 1000000) : '' %>">
+                                <span class="input-group-text bg-light border-0 fw-bold">Trđ</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Diện tích (m²)</label>
+                            <input type="number" name="area" class="form-control bg-light border-0 py-2" 
+                                   required value="<%= roomData.area || '' %>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4 p-4">
+                    <h5 class="fw-bold mb-3 text-primary">Vị trí & Chi tiết</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Quận/Huyện</label>
+                            <select name="district" class="form-select border-2" required>
+                                <option value="">-- Chọn Quận/Huyện --</option>
+                                <% ['Ba Đình', 'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Hoàn Kiếm', 'Thanh Xuân', 'Hoàng Mai', 'Long Biên', 'Hà Đông', 'Tây Hồ', 'Nam Từ Liêm', 'Bắc Từ Liêm'].forEach(q => { %>
+                                    <option value="<%= q %>" <%= (isEdit && roomData.location && roomData.location.includes(q)) ? 'selected' : '' %> ><%= q %></option>
+                                <% }) %>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Loại phòng</label>
+                            <select name="type" id="roomType" class="form-select border-2" onchange="toggleDirectionField()">
+                                <option value="">Tất cả loại</option>
+                                <% ['Studio', '1N1K', '2N1K', 'Chung cư', 'Nguyên căn'].forEach(t => { %>
+                                    <option value="<%= t %>" <%= (isEdit && roomData.type === t) ? 'selected' : '' %>><%= t %></option>
+                                <% }) %>
+                            </select>
+                        </div>
+
+                        <div class="col-12" id="directionContainer" style="display: none;">
+                            <label class="form-label small fw-bold text-primary"><i class="bi bi-compass"></i> Hướng nhà (Chỉ dành cho Chung cư/Nguyên căn)</label>
+                            <select name="direction" id="directionField" class="form-select border-2">
+                                <option value="">-- Chọn hướng --</option>
+                                <% ['Đông', 'Tây', 'Nam', 'Bắc', 'Đông Nam', 'Đông Bắc', 'Tây Nam', 'Tây Bắc'].forEach(d => { %>
+                                    <option value="<%= d %>" <%= (isEdit && roomData.direction === d) ? 'selected' : '' %>><%= d %></option>
+                                <% }) %>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Địa chỉ cụ thể (Không bao gồm quận)</label>
+                            <input type="text" name="address" class="form-control border-2" 
+                                   placeholder="Ví dụ: Số 104 Trung Liệt" required
+                                   value="<%= (isEdit && roomData.location) ? roomData.location.split(',')[0] : '' %>">
+                            <div class="form-text text-muted small">
+                                <i class="bi bi-info-circle me-1"></i> Hệ thống sẽ tự gộp Quận + Địa chỉ để tạo link bản đồ.
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">Mô tả chi tiết</label>
+                            <textarea name="description" class="form-control bg-light border-0 shadow-sm" 
+                                      rows="12" style="min-height: 250px;" 
+                                      placeholder="Nhập tiện nghi, giờ giấc, phí dịch vụ..."><%= roomData.description || '' %></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4 p-4 text-center border-dashed">
+                    <h5 class="fw-bold mb-3 text-primary text-start">Hình ảnh</h5>
+                    <div class="py-3">
+                        <% if(isEdit && roomData.images && roomData.images.length > 0) { %>
+                            <div class="d-flex flex-wrap gap-2 mb-3 justify-content-center">
+                                <% roomData.images.forEach(img => { %>
+                                    <img src="<%= img %>" class="rounded shadow-sm" style="width: 100px; height: 70px; object-fit: cover;">
+                                <% }) %>
+                            </div>
+                            <p class="small text-danger">Tải ảnh mới sẽ thay thế hoàn toàn dàn ảnh cũ</p>
+                        <% } else { %>
+                            <i class="bi bi-images display-4 text-muted"></i>
+                        <% } %>
+                        <input type="file" name="images" class="form-control mt-3" multiple <%= isEdit ? '' : 'required' %>>
+                        <p class="small text-muted mt-2">Nên chọn ít nhất 3 ảnh rõ nét</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 mb-5">
+                <button type="submit" class="btn btn-primary btn-lg w-100 rounded-pill shadow fw-bold">
+                    <%= isEdit ? 'Cập nhật thay đổi' : 'Đăng bài ngay' %>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .max-width-700 { max-width: 700px; }
+    .border-dashed { border: 2px dashed #dee2e6 !important; }
+    .form-control:focus, .form-select:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1);
+    }
+</style>
+<script>
+function toggleDirectionField() {
+    const roomTypeSelect = document.getElementById('roomType');
+    const directionContainer = document.getElementById('directionContainer');
+    const directionField = document.getElementById('directionField');
+
+    if (!roomTypeSelect || !directionContainer) return;
+
+    const val = roomTypeSelect.value;
+
+    if (val === "Chung cư" || val === "Nguyên căn") {
+        directionContainer.style.display = "block";
+    } else {
+        directionContainer.style.display = "none";
+        if(directionField) directionField.value = ""; 
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    toggleDirectionField();
+});
+</script>
+<%- include('partials/footer') %>

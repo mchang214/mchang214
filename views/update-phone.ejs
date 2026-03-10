@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hoàn thiện thông tin | PHONGTROHN</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body { background-color: #f0f2f5; height: 100vh; display: flex; align-items: center; }
+        .update-card { border-radius: 20px; border: none; }
+        .btn-finish { border-radius: 10px; padding: 12px; font-weight: bold; }
+        .input-phone { border-radius: 10px; padding: 12px; border: 2px solid #eee; }
+        .input-phone:focus { border-color: #0d6efd; box-shadow: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-5 col-lg-4">
+            <div class="card update-card shadow-lg p-4 text-center">
+                <div class="mb-3">
+                    <i class="bi bi-shield-check text-primary" style="font-size: 3rem;"></i>
+                </div>
+                <h3 class="fw-bold text-dark">Một bước cuối cùng!</h3>
+                <p class="text-muted mb-4">Chào <b><%= user.name %></b>, vui lòng cung cấp số điện thoại để chúng tôi có thể hỗ trợ bạn tốt nhất khi đặt lịch xem phòng.</p>
+                
+                <form action="/update-phone" method="POST">
+                    <div class="text-start mb-3">
+                        <label class="form-label small fw-bold text-secondary">Số điện thoại chính chủ</label>
+                        <input type="tel" name="phone" class="form-control input-phone" 
+                               placeholder="Ví dụ: 0346xxxxxx" 
+                               pattern="[0-9]{10}" 
+                               title="Vui lòng nhập đúng 10 chữ số" 
+                               required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 btn-finish">
+                        <i class="bi bi-check-circle-fill me-2"></i>Hoàn tất đăng ký
+                    </button>
+                </form>
+
+                <div class="mt-4">
+                    <a href="/logout" class="text-decoration-none small text-danger fw-bold">Thoát tài khoản</a>
+                </div>
+            </div>
+            <p class="text-center mt-4 text-muted small">© 2026 Hệ thống PHONGTROHN</p>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
