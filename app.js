@@ -60,8 +60,6 @@ const upload = multer({ storage: storage });
 // --- 4. MIDDLEWARE & PASSPORT ---
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
-
-// SỬA ĐỔI Ở ĐÂY: Thêm json() để đọc được req.body khi gửi từ Fetch API
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 
@@ -183,7 +181,6 @@ app.get('/', async (req, res) => {
             ];
         }
         const locations = await Room.distinct('location');
-
         const rooms = await Room.find(filter);
 
         res.render('index', { 
@@ -243,7 +240,6 @@ app.post('/login', async (req, res) => {
             isMatch = await bcrypt.compare(passwordInput, user.password);
         } else {
             isMatch = (passwordInput === user.password);
-            
             if (isMatch) {
                 user.password = passwordInput; 
                 await user.save(); 
@@ -286,12 +282,7 @@ app.post('/register', async (req, res) => {
             }
         }
 
-        const newUser = new User({ 
-            phone, 
-            email, 
-            password 
-        });
-
+        const newUser = new User({ phone, email, password });
         await newUser.save();
         
         req.flash('message', 'Đăng ký thành công! Hãy đăng nhập.');
@@ -349,7 +340,6 @@ app.post('/verify-otp', (req, res) => {
 app.get('/reset-password', (req, res) => res.render('reset-password', { page: 'auth' }));
 app.post('/reset-password', async (req, res) => {
     if (!req.session.otpVerified) return res.redirect('/forgot-password');
-    
     try {
         const user = await User.findOne({ phone: req.session.resetPhone });
         if (user) {
@@ -360,53 +350,7 @@ app.post('/reset-password', async (req, res) => {
         delete req.session.otpVerified;
         req.flash('message', 'Đặt lại mật khẩu thành công!');
         res.redirect('/login');
-    } catch (err) {
-        res.redirect('/forgot-password');
-    }
-});
-
-app.get('/change-password', (req, res) => {
-    if (!req.user) return res.redirect('/login');
-    res.render('change-password', { page: 'profile' });
-});
-
-app.post('/change-password', async (req, res) => {
-    if (!req.user) return res.redirect('/login');
-    
-    const { oldPassword, newPassword, confirmPassword } = req.body;
-
-    try {
-        const user = await User.findById(req.user._id);
-        
-        if (!user || !user.password) {
-            req.flash('message', 'Tài khoản không có mật khẩu (đăng nhập bằng Google)!');
-            req.flash('message_type', 'danger');
-            return res.redirect('/change-password');
-        }
-
-        const isMatch = await bcrypt.compare(oldPassword, user.password);
-        if (!isMatch) {
-            req.flash('message', 'Mật khẩu cũ không chính xác!');
-            req.flash('message_type', 'danger');
-            return res.redirect('/change-password');
-        }
-
-        if (newPassword !== confirmPassword) {
-            req.flash('message', 'Mật khẩu mới không trùng khớp!');
-            req.flash('message_type', 'danger');
-            return res.redirect('/change-password');
-        }
-        user.password = newPassword; 
-        await user.save(); 
-        req.flash('message', 'Đổi mật khẩu thành công!');
-        req.flash('message_type', 'success');
-        res.redirect('/change-password');
-    } catch (err) {
-        console.error("Lỗi đổi pass:", err);
-        req.flash('message', 'Có lỗi xảy ra, vui lòng thử lại sau!');
-        req.flash('message_type', 'danger');
-        res.redirect('/change-password');
-    }
+    } catch (err) { res.redirect('/forgot-password'); }
 });
 
 app.get('/logout', (req, res) => {
@@ -446,14 +390,12 @@ app.get('/da-luu', async (req, res) => {
 
 app.post('/book', async (req, res) => {
     const { roomId, appointmentTime, guestName, roomCode, guestPhone, roomTitle } = req.body;
-    
     try {
         let finalPhone = "";
         let userId = null;
         if (req.user) {
             finalPhone = req.user.phone || "N/A";
             userId = req.user._id;
-            
             await User.findByIdAndUpdate(req.user._id, {
                 $push: { 
                     appointments: { 
@@ -469,14 +411,8 @@ app.post('/book', async (req, res) => {
         }
 
         const newBooking = new Booking({
-            room: roomId,
-            roomCode: roomCode,
-            guestName: guestName,
-            guestPhone: finalPhone,
-            appointmentTime: appointmentTime,
-            user: userId, 
-            isGuest: req.user ? false : true,
-            roomTitle: roomTitle 
+            room: roomId, roomCode, guestName, guestPhone: finalPhone,
+            appointmentTime, user: userId, isGuest: req.user ? false : true, roomTitle 
         });
         await newBooking.save();
 
@@ -490,21 +426,10 @@ app.post('/book', async (req, res) => {
             html: `
                 <div style="font-family: sans-serif; line-height: 1.6; border: 1px solid #eee; padding: 20px; max-width: 600px;">
                     <h2 style="color: #0066ff; border-bottom: 2px solid #0066ff; padding-bottom: 10px;">Yêu cầu xem phòng mới</h2>
-                    <p><b>Tiêu đề bài viết:</b> <span style="color: #333;">${roomTitle}</span></p>
-                    <p><b>Khách hàng:</b> ${guestName}</p>
-                    <p><b>Số điện thoại:</b> <a href="tel:${finalPhone}" style="color: red; font-weight: bold;">${finalPhone}</a></p>
-                    
-                    <p><b>Thông tin phòng:</b> 
-                        <a href="${roomLink}" style="color: #0066ff; font-weight: bold; text-decoration: underline;">
-                            Mã: ${roomCode} (Xem chi tiết bài viết)
-                        </a>
-                    </p>
-                    
+                    <p><b>Tiêu đề:</b> ${roomTitle}</p>
+                    <p><b>Khách hàng:</b> ${guestName} - ${finalPhone}</p>
+                    <p><b>Mã phòng:</b> <a href="${roomLink}">${roomCode}</a></p>
                     <p><b>Giờ hẹn:</b> ${formattedTime}</p>
-                    <hr>
-                    <p style="font-size: 0.8rem; color: #666;">
-                        ${req.user ? '✔ Khách hàng đã có tài khoản' : '⚠ Khách vãng lai'}
-                    </p>
                 </div>
             `
         });
@@ -512,19 +437,10 @@ app.post('/book', async (req, res) => {
         req.flash('message', 'Bạn đã yêu cầu xem phòng thành công!');
         req.flash('message_type', 'success');
         res.redirect(`/room/${roomId}`);
-
     } catch (err) {
-        console.error("Lỗi đặt lịch:", err);
-        req.flash('message', 'Đã có lỗi xảy ra, vui lòng thử lại sau.');
-        req.flash('message_type', 'error');
+        req.flash('message', 'Đã có lỗi xảy ra.');
         res.redirect(`/room/${roomId}`);
     }
-});
-
-app.get('/lich-hen', async (req, res) => {
-    if (!req.user) return res.redirect('/login');
-    const userData = await User.findById(req.user._id).populate('appointments.room');
-    res.render('lich-hen', { userData, user: req.user, page: 'appointments' });
 });
 
 // --- 7 ROUTES ADMIN ---
@@ -533,10 +449,6 @@ app.get('/admin', isAdminMiddleware, async (req, res) => {
     let query = search ? { $or: [{ code: { $regex: search.trim(), $options: 'i' } }, { title: { $regex: search.trim(), $options: 'i' } }] } : {};
     const rooms = await Room.find(query).sort({ createdAt: -1 });
     res.render('admin-list', { rooms, searchQuery: search || '', page: 'admin-list' });
-});
-
-app.get('/admin/add', isAdminMiddleware, (req, res) => {
-    res.render('admin-add', { page: 'admin-add', editRoom: null });
 });
 
 app.post('/admin/add', isAdminMiddleware, upload.array('images', 10), async (req, res) => {
@@ -550,142 +462,62 @@ app.post('/admin/add', isAdminMiddleware, upload.array('images', 10), async (req
     res.redirect('/admin');
 });
 
-app.get('/admin/bookings', async (req, res) => {
-    try {
-        const rawBookings = await Booking.find().populate('room').sort({ createdAt: -1 });
-        const bookings = rawBookings.map(b => {
-            if (!b.room) {
-                b.room = { location: "Phòng đã bị xóa", price: 0 };
-            }
-            return b;
-        });
-        res.render('admin-bookings', { 
-            bookings: bookings, 
-            page: 'admin-bookings',
-            isAdmin: true, 
-            user: req.user 
-        });
-    } catch (error) {
-        console.error("Lỗi trang lịch hẹn:", error);
-        res.status(500).send("Lỗi Server: " + error.message);
-    }
-});
-
-app.post('/admin/bookings/confirm/:id', async (req, res) => {
-    try {
-        const bookingId = req.params.id;
-        const newStatus = (req.body && req.body.status) ? req.body.status : 'Đã xác nhận';
-
-        const updatedBooking = await Booking.findByIdAndUpdate(
-            bookingId, 
-            { status: newStatus }, 
-            { new: true }
-        );
-
-        if (!updatedBooking) {
-            return res.status(404).json({ success: false, message: 'Không tìm thấy lịch hẹn' });
-        }
-
-        if (updatedBooking.user) {
-            await User.updateOne(
-                { 
-                    _id: updatedBooking.user, 
-                    "appointments.room": updatedBooking.room,
-                    "appointments.appointmentTime": updatedBooking.appointmentTime 
-                },
-                { 
-                    $set: { "appointments.$.status": newStatus } 
-                }
-            );
-        }
-
-        res.json({ 
-            success: true, 
-            message: 'Đã cập nhật trạng thái Admin thành công!' 
-        });
-    } catch (error) {
-        console.error("Lỗi xác nhận lịch hẹn:", error);
-        res.status(500).json({ success: false, message: 'Lỗi server khi xác nhận' });
-    }
-});
-
-app.get('/admin/api/bookings-data', async (req, res) => {
-    try {
-        const bookings = await Booking.find().populate('room').sort({ createdAt: -1 });
-        
-        const cleanData = bookings.map(b => {
-            const roomData = b.room || { location: "N/A", price: 0 }; 
-            const roomPrice = roomData.price || 0;
-            
-            return {
-                "Ngày gửi": b.createdAt ? new Date(b.createdAt).toLocaleDateString('vi-VN') : "", 
-                "Khách hàng": b.guestName,
-                "Số điện thoại": b.guestPhone,
-                "Mã phòng": b.roomCode,
-                "Địa chỉ": roomData.location,
-                "Giá phòng": roomPrice,
-                "Ngày hẹn": new Date(b.appointmentTime).toLocaleDateString('vi-VN'),
-                "Trạng thái": b.status,
-                "Phân loại": b.isGuest ? "Vãng lai" : "Thành viên",
-                "Lợi nhuận (%)": "", // Để trống để bạn điền vào Sheet (ví dụ: 0.1 cho 10%)
-                "Hoa hồng": 0        
-            };
-        });
-        res.json(cleanData);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/admin/delete/:id', isAdminMiddleware, async (req, res) => {
-    await Room.findByIdAndDelete(req.params.id);
-    res.redirect('/admin');
-});
-
-app.get('/admin/edit/:id', isAdminMiddleware, async (req, res) => {
-    const room = await Room.findById(req.params.id);
-    res.render('admin-add', { page: 'admin-list', editRoom: room });
-});
-
-app.post('/admin/edit/:id', isAdminMiddleware, upload.array('images', 10), async (req, res) => {
-    const { title, price, area, district, address, description, type, direction, code } = req.body;
-    const updateData = {
-        title, code, area, description, type, direction,
-        price: (parseFloat(price.toString().replace(',', '.')) || 0) * 1000000,
-        location: `${address}, ${district}, Hà Nội`
-    };
-    if (req.files && req.files.length > 0) updateData.images = req.files.map(f => f.path);
-    await Room.findByIdAndUpdate(req.params.id, updateData);
-    res.redirect('/admin');
-});
-
-app.get('/admin/toggle/:id', isAdminMiddleware, async (req, res) => {
-    const room = await Room.findById(req.params.id);
-    room.status = !room.status;
-    await room.save();
-    res.redirect('/admin');
-});
+// Route Tìm kiếm cơ bản (khớp với extractInfo trong chatbot.js)
+// TRONG APP.JS
 app.get('/api/chatbot/search', async (req, res) => {
     try {
-        res.setHeader('ngrok-skip-browser-warning', 'true');
-        const { budget, location } = req.query;
-        let filter = { status: true }; 
+        const { maxPrice, location, keyword, minArea } = req.query;
+        let filter = { status: true }; // Chỉ lấy phòng còn trống
 
-        if (budget) filter.price = { $lte: parseInt(budget) };
+        if (maxPrice) filter.price = { $lte: parseInt(maxPrice) };
+        if (minArea) filter.area = { $gte: parseInt(minArea) };
         if (location) filter.location = { $regex: location, $options: 'i' };
+        
+        // CỰC KỲ QUAN TRỌNG: Tìm kiếm sâu trong tiêu đề và mô tả
+        if (keyword) {
+            const keywordsArray = keyword.split(" ");
+            filter.$or = [
+                { title: { $regex: keyword, $options: 'i' } },
+                { description: { $regex: keyword, $options: 'i' } },
+                // Tìm kiếm từng từ đơn lẻ để tăng độ chính xác
+                { description: { $in: keywordsArray.map(k => new RegExp(k, 'i')) } }
+            ];
+        }
 
-        const rooms = await Room.find(filter).limit(10); 
+        const rooms = await Room.find(filter).sort({ price: 1 }).limit(5);
+        res.json({ success: true, data: rooms });
+    } catch (err) {
+        res.status(500).json({ success: false });
+    }
+});
+
+app.get('/api/chatbot/search-advanced', async (req, res) => {
+    try {
+        const { maxPrice, location, keyword, minArea, direction } = req.query;
+        let filter = { status: true };
+        
+        if (maxPrice) filter.price = { $lte: parseInt(maxPrice) };
+        if (location) filter.location = { $regex: location, $options: 'i' };
+        if (minArea) filter.area = { $gte: parseInt(minArea) };
+        if (direction) filter.direction = { $regex: direction, $options: 'i' };
+        if (keyword) {
+            filter.$or = [
+                { description: { $regex: keyword, $options: 'i' } }, 
+                { title: { $regex: keyword, $options: 'i' } }
+            ];
+        }
+
+        const rooms = await Room.find(filter).limit(5);
         const results = rooms.map(r => ({
-            code: r.code,
+            _id: r._id,
+            code: r.code, 
             title: r.title,
             price: (r.price / 1000000).toFixed(1) + " triệu",
-            url: `${req.protocol}://${req.get('host')}/room/${r._id}`
+            area: r.area,
+            location: r.location
         }));
-
         res.json({ success: true, data: results });
-    } catch (err) {
-        res.status(500).json({ success: false, msg: "Lỗi tra cứu" });
-    }
+    } catch (err) { res.status(500).json({ success: false }); }
 });
 
 const PORT = process.env.PORT || 3000;
