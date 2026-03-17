@@ -26,20 +26,25 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/PhongTroDB'
 .catch(err => console.error('❌ Lỗi kết nối MongoDB!'));
 
 // --- 2. ĐỊNH NGHĨA MODEL ROOM ---
+
 const roomSchema = new mongoose.Schema({
     code: String,
     title: String,
     price: Number,
     area: Number,
     direction: String,
-    location: String,
+    location: String, 
     type: String,
     mapsUrl: String,
     description: String,
     images: [String],
     status: { type: Boolean, default: true }
 }, { timestamps: true });
+
+// Đã gỡ bỏ geometry và index 2dsphere ở đây
+
 const Room = mongoose.model('Room', roomSchema);
+module.exports = Room;
 
 // --- 3. CẤU HÌNH CLOUDINARY ---
 cloudinary.config({
@@ -451,6 +456,10 @@ app.get('/admin', isAdminMiddleware, async (req, res) => {
     res.render('admin-list', { rooms, searchQuery: search || '', page: 'admin-list' });
 });
 
+app.get('/admin/add', isAdminMiddleware, (req, res) => {
+    res.render('admin-add', { page: 'admin-add', editRoom: null });
+});
+
 app.post('/admin/add', isAdminMiddleware, upload.array('images', 10), async (req, res) => {
     const { title, price, area, district, address, description, type, direction, code } = req.body;
     const finalPrice = (parseFloat(price.toString().replace(',', '.')) || 0) * 1000000;
@@ -462,32 +471,179 @@ app.post('/admin/add', isAdminMiddleware, upload.array('images', 10), async (req
     res.redirect('/admin');
 });
 
-// Route Tìm kiếm cơ bản (khớp với extractInfo trong chatbot.js)
-// TRONG APP.JS
-app.get('/api/chatbot/search', async (req, res) => {
+app.get('/admin/bookings', async (req, res) => {
     try {
-        const { maxPrice, location, keyword, minArea } = req.query;
-        let filter = { status: true }; // Chỉ lấy phòng còn trống
+        const rawBookings = await Booking.find().populate('room').sort({ createdAt: -1 });
+        const bookings = rawBookings.map(b => {
+            if (!b.room) {
+                b.room = { location: "Phòng đã bị xóa", price: 0 };
+            }
+            return b;
+        });
+        res.render('admin-bookings', { 
+            bookings: bookings, 
+            page: 'admin-bookings',
+            isAdmin: true, 
+            user: req.user 
+        });
+    } catch (error) {
+        console.error("Lỗi trang lịch hẹn:", error);
+        res.status(500).send("Lỗi Server: " + error.message);
+    }
+});
 
-        if (maxPrice) filter.price = { $lte: parseInt(maxPrice) };
-        if (minArea) filter.area = { $gte: parseInt(minArea) };
-        if (location) filter.location = { $regex: location, $options: 'i' };
-        
-        // CỰC KỲ QUAN TRỌNG: Tìm kiếm sâu trong tiêu đề và mô tả
-        if (keyword) {
-            const keywordsArray = keyword.split(" ");
-            filter.$or = [
-                { title: { $regex: keyword, $options: 'i' } },
-                { description: { $regex: keyword, $options: 'i' } },
-                // Tìm kiếm từng từ đơn lẻ để tăng độ chính xác
-                { description: { $in: keywordsArray.map(k => new RegExp(k, 'i')) } }
-            ];
+app.post('/admin/bookings/confirm/:id', async (req, res) => {
+    try {
+        const bookingId = req.params.id;
+        const newStatus = (req.body && req.body.status) ? req.body.status : 'Đã xác nhận';
+
+        const updatedBooking = await Booking.findByIdAndUpdate(
+            bookingId, 
+            { status: newStatus }, 
+            { new: true }
+        );
+
+        if (!updatedBooking) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy lịch hẹn' });
         }
 
-        const rooms = await Room.find(filter).sort({ price: 1 }).limit(5);
+        if (updatedBooking.user) {
+            await User.updateOne(
+                { 
+                    _id: updatedBooking.user, 
+                    "appointments.room": updatedBooking.room,
+                    "appointments.appointmentTime": updatedBooking.appointmentTime 
+                },
+                { 
+                    $set: { "appointments.$.status": newStatus } 
+                }
+            );
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Đã cập nhật trạng thái Admin thành công!' 
+        });
+    } catch (error) {
+        console.error("Lỗi xác nhận lịch hẹn:", error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi xác nhận' });
+    }
+});
+
+app.get('/admin/api/bookings-data', async (req, res) => {
+    try {
+        const bookings = await Booking.find().populate('room').sort({ createdAt: -1 });
+        
+        const cleanData = bookings.map(b => {
+            const roomData = b.room || { location: "N/A", price: 0 }; 
+            const roomPrice = roomData.price || 0;
+            
+            return {
+                "Ngày gửi": b.createdAt ? new Date(b.createdAt).toLocaleDateString('vi-VN') : "", 
+                "Khách hàng": b.guestName,
+                "Số điện thoại": b.guestPhone,
+                "Mã phòng": b.roomCode,
+                "Địa chỉ": roomData.location,
+                "Giá phòng": roomPrice,
+                "Ngày hẹn": new Date(b.appointmentTime).toLocaleDateString('vi-VN'),
+                "Trạng thái": b.status,
+                "Phân loại": b.isGuest ? "Vãng lai" : "Thành viên",
+                "Lợi nhuận (%)": "", // Để trống để bạn điền vào Sheet (ví dụ: 0.1 cho 10%)
+                "Hoa hồng": 0        
+            };
+        });
+        res.json(cleanData);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/admin/delete/:id', isAdminMiddleware, async (req, res) => {
+    await Room.findByIdAndDelete(req.params.id);
+    res.redirect('/admin');
+});
+
+app.get('/admin/edit/:id', isAdminMiddleware, async (req, res) => {
+    const room = await Room.findById(req.params.id);
+    res.render('admin-add', { page: 'admin-list', editRoom: room });
+});
+
+app.post('/admin/edit/:id', isAdminMiddleware, upload.array('images', 10), async (req, res) => {
+    const { title, price, area, district, address, description, type, direction, code } = req.body;
+    const updateData = {
+        title, code, area, description, type, direction,
+        price: (parseFloat(price.toString().replace(',', '.')) || 0) * 1000000,
+        location: `${address}, ${district}, Hà Nội`
+    };
+    if (req.files && req.files.length > 0) updateData.images = req.files.map(f => f.path);
+    await Room.findByIdAndUpdate(req.params.id, updateData);
+    res.redirect('/admin');
+});
+
+app.get('/admin/toggle/:id', isAdminMiddleware, async (req, res) => {
+    const room = await Room.findById(req.params.id);
+    room.status = !room.status;
+    await room.save();
+    res.redirect('/admin');
+});
+
+app.get('/api/chatbot/search', async (req, res) => {
+    try {
+        res.setHeader('ngrok-skip-browser-warning', 'true');
+        const { maxPrice, locations, location, keyword, minArea, excludeKeyword } = req.query;
+        
+        // 1. Khởi tạo filter cơ bản
+        let filter = { status: true }; 
+
+        // 2. Lọc theo giá
+        if (maxPrice) filter.price = { $lte: parseInt(maxPrice) };
+
+        // 3. Lọc theo diện tích (Lấy các phòng >= diện tích yêu cầu)
+        if (minArea) filter.area = { $gte: parseInt(minArea) };
+
+        // 4. Lọc theo địa điểm (Hỗ trợ nhiều quận cùng lúc)
+        const targetLocations = locations || location;
+        if (targetLocations) {
+            const locArray = Array.isArray(targetLocations) ? targetLocations : [targetLocations];
+            // Sử dụng Regex để tìm kiếm linh hoạt (không phân biệt hoa thường, khớp một phần)
+            filter.location = { $in: locArray.map(l => new RegExp(l.trim(), 'i')) };
+        }
+
+        // 5. Kết hợp Keyword và ExcludeKeyword để không bị ghi đè
+        let andConditions = [];
+
+        // Điều kiện tìm kiếm từ khóa (Nếu có)
+        if (keyword && keyword.trim() !== "") {
+            andConditions.push({
+                $or: [
+                    { title: { $regex: keyword.trim(), $options: 'i' } },
+                    { description: { $regex: keyword.trim(), $options: 'i' } }
+                ]
+            });
+        }
+
+        // Điều kiện loại trừ từ khóa (Nếu có - ví dụ: "không chung chủ")
+        if (excludeKeyword && excludeKeyword.trim() !== "") {
+            const regexExclude = new RegExp(excludeKeyword.trim(), 'i');
+            andConditions.push({ title: { $not: regexExclude } });
+            andConditions.push({ description: { $not: regexExclude } });
+        }
+
+        // Nếu có các điều kiện phụ thì thêm vào filter chính
+        if (andConditions.length > 0) {
+            filter.$and = andConditions;
+        }
+
+        // 6. Truy vấn (Sắp xếp giá thấp đến cao cho người dùng dễ chọn)
+        const rooms = await Room.find(filter)
+            .sort({ createdAt: -1, price: -1 }) 
+            .limit(10);
+
         res.json({ success: true, data: rooms });
+
     } catch (err) {
-        res.status(500).json({ success: false });
+        console.error("Lỗi Chatbot API:", err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
