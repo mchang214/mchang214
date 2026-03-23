@@ -5,6 +5,7 @@ const BASE_URL = window.location.origin;
  */
 const getChatStorageKey = () => {
     const userId = document.getElementById("chat-user-id")?.value || 'guest';
+    // SỬA LỖI: Thêm dấu backtick quanh chuỗi có biến ${}
     return `chat_history_${userId}`;
 };
 
@@ -59,97 +60,73 @@ function addMessage(text, isUser = false, shouldSave = true) {
     if (shouldSave) saveChatHistory(text, isUser);
 }
 
+function detectIntent(msg) {
+    msg = msg.toLowerCase();
+    if (msg.includes("nên thuê") || msg.includes("phòng nào tốt")) return "ADVICE";
+    if (msg.includes("so sánh")) return "COMPARE";
+    return "SEARCH";
+}
+
+function buildFollowup(memory) {
+    if (!memory) return null;
+    if (!memory.location) return "👉 Bạn muốn thuê khu vực quận nào để mình tìm chuẩn hơn?";
+    if (!memory.maxPrice) return "👉 Bạn muốn thuê khoảng bao nhiêu triệu?";
+    if (!memory.minArea) return "👉 Bạn cần phòng rộng khoảng bao nhiêu m²?";
+    return null;
+}
+
+function buildAdvice(room, memory) {
+    if (!room || !memory) return "";
+    // SỬA LỖI: Thêm dấu backtick bao quanh nội dung tin nhắn
+    let msg = `🤖 Mình thấy phòng <b>${room.title}</b> phù hợp nhất với bạn vì:<br>`;
+
+    if (memory.maxPrice && room.price <= memory.maxPrice) {
+        msg += "✅ Giá nằm trong ngân sách bạn mong muốn<br>";
+    }
+    if (memory.minArea && room.area >= memory.minArea) {
+        msg += "✅ Diện tích rộng thoải mái<br>";
+    }
+    if (memory.location && room.location.toLowerCase().includes(memory.location.toString().toLowerCase())) {
+        msg += "✅ Đúng khu vực bạn cần tìm<br>";
+    }
+    msg += "👉 Bạn muốn mình so sánh thêm phòng khác không?";
+    return msg;
+}
+
 /**
- * 2. HÀM TRÍCH XUẤT THÔNG TIN (Đã sửa lỗi địa danh & thêm diện tích)
+ * 2. HÀM TRÍCH XUẤT THÔNG TIN
  */
 function extractInfo(message) {
     const msg = message.toLowerCase();
-    let info = {
-        maxPrice: null,
-        minArea: null,
-        locations: [],
-        keyword: "", 
-        excludeKeyword: ""
-    };
+    let info = { maxPrice: null, minArea: null, locations: [], keyword: "", excludeKeyword: "" };
 
-    // --- A. Từ điển Địa danh -> Quận (Đã đồng bộ thuộc tính .areas) ---
     const pointOfInterests = [
         { name: "ngã tư sở", areas: ["đống đa", "thanh xuân"] },
         { name: "ngã tư vọng", areas: ["hai bà trưng", "thanh xuân", "đống đa"] },
-        { name: "cầu giấy", areas: ["cầu giấy"] },
-        { name: "mỹ đình", areas: ["nam từ liêm", "bắc từ liêm"] },
-        { name: "hồ tây", areas: ["tây hồ"] },
         { name: "bách khoa", areas: ["hai bà trưng"] },
         { name: "kinh tế quốc dân", areas: ["hai bà trưng"] },
         { name: "xây dựng", areas: ["hai bà trưng"] },
         { name: "ngoại thương", areas: ["đống đa"] },
-        { name: "ngoại giao", areas: ["đống đa"] },
-        { name: "giao thông vận tải", areas: ["đống đa", "cầu giấy"] },
-        { name: "học viện ngân hàng", areas: ["đống đa"] },
-        { name: "thủy lợi", areas: ["đống đa"] },
-        { name: "công đoàn", areas: ["đống đa"] },
-        { name: "y hà nội", areas: ["đống đa"] },
-        { name: "học viện báo chí", areas: ["cầu giấy"] },
-        { name: "sư phạm", areas: ["cầu giấy"] },
-        { name: "quốc gia", areas: ["cầu giấy"] },
-        { name: "thương mại", areas: ["cầu giấy", "nam từ liêm"] },
-        { name: "học viện tài chính", areas: ["bắc từ liêm"] },
-        { name: "mỏ địa chất", areas: ["bắc từ liêm"] },
-        { name: "công nghiệp", areas: ["bắc từ liêm"] },
-        { name: "kiến trúc", areas: ["hà đông"] },
-        { name: "bưu chính", areas: ["hà đông"] },
-        { name: "học viện an ninh", areas: ["hà đông", "thanh xuân"] },
-        { name: "thăng long", areas: ["hoàng mai"] },
-        { name: "nông nghiệp", areas: ["long biên", "gia lâm"] },
-        { name: "học viện tòa án", areas: ["long biên"] },
-        { name: "cao đẳng fpt", areas: ["nam từ liêm"] },
-        { name: "cao đẳng du lịch", areas: ["bắc từ liêm"] },
-        { name: "cao đẳng y hà nội", areas: ["thanh xuân"] }
+        { name: "cầu giấy", areas: ["cầu giấy"] }
     ];
 
     pointOfInterests.forEach(poi => {
         if (msg.includes(poi.name)) {
-            poi.areas.forEach(a => {
-                if (!info.locations.includes(a)) info.locations.push(a);
-            });
+            poi.areas.forEach(a => { if (!info.locations.includes(a)) info.locations.push(a); });
         }
     });
 
-    // --- B. Xử lý tên Quận trực tiếp ---
     const districts = ["ba đình", "cầu giấy", "đống đa", "hai bà trưng", "hoàn kiếm", "thanh xuân", "hoàng mai", "long biên", "hà đông", "tây hồ", "nam từ liêm", "bắc từ liêm"];
-    districts.forEach(d => {
-        if (msg.includes(d)) {
-            if (!info.locations.includes(d)) info.locations.push(d);
-        }
-    });
+    districts.forEach(d => { if (msg.includes(d) && !info.locations.includes(d)) info.locations.push(d); });
 
-    // --- C. Xử lý Giá ---
     const priceMatch = msg.match(/(\d+)\s*(tr|triệu|trieu)/) || msg.match(/(\d{6,})/);
     if (priceMatch) {
         const val = parseInt(priceMatch[1]);
         info.maxPrice = val < 100 ? val * 1000000 : val;
     }
 
-    // --- D. Xử lý Diện tích (m2) ---
     const areaMatch = msg.match(/(\d+)\s*(m2|mét vuông|met vuong|m²)/);
-    if (areaMatch) {
-        info.minArea = parseInt(areaMatch[1]);
-    }
-
-    // --- E. Xử lý Từ khóa đặc điểm ---
-    const features = ["gác xép", "ban công", "điều hòa", "nóng lạnh", "thang máy", "full đồ", "studio", "1n1k", "2n1k"];
-    const negationWords = ["không", "khong", "ko", "chẳng", "kh", "đừng"];
-    
-    features.forEach(f => {
-        if (msg.includes(f)) {
-            const isNegated = negationWords.some(word => msg.includes(word + " " + f));
-            if (isNegated) {
-                info.excludeKeyword = f;
-            } else {
-                info.keyword = f;
-            }
-        }
-    });
+    if (areaMatch) info.minArea = parseInt(areaMatch[1]);
 
     return info;
 }
@@ -167,33 +144,34 @@ async function sendChat() {
 
     const info = extractInfo(text);
     const params = new URLSearchParams();
-    
     if (info.maxPrice) params.append("maxPrice", info.maxPrice);
     if (info.minArea) params.append("minArea", info.minArea);
-    if (info.keyword) params.append("keyword", info.keyword);
-    if (info.excludeKeyword) params.append("excludeKeyword", info.excludeKeyword);
-    
-    if (info.locations.length > 0) {
-        info.locations.forEach(loc => params.append("locations", loc));
-    }
+    info.locations.forEach(loc => params.append("locations", loc));
 
     try {
         const typingId = "typing-" + Date.now();
+        // SỬA LỖI: Thêm dấu backtick quanh addMessage chứa icon
         addMessage(`<i id="${typingId}" class="bi bi-three-dots"></i> Đang tìm phòng tốt nhất cho bạn...`);
 
+        // SỬA LỖI: Thêm dấu backtick quanh URL fetch
         const res = await fetch(`${BASE_URL}/api/chatbot/search?${params.toString()}`, {
             headers: { 'ngrok-skip-browser-warning': 'true', 'Accept': 'application/json' }
         });
         
         const data = await res.json();
+
         const typingElem = document.getElementById(typingId)?.parentElement;
         if (typingElem) typingElem.remove();
 
+        const follow = buildFollowup(data.memory);
+        if (follow) addMessage("🤖 " + follow);
+
         if (!data.success || !data.data || data.data.length === 0) {
-            addMessage("🤖 Tiếc quá, tôi chưa tìm thấy phòng nào khớp yêu cầu. Bạn thử tìm khu vực khác hoặc giảm bớt tiêu chí xem sao!");
+            addMessage("🤖 Tiếc quá, tôi chưa tìm thấy phòng nào khớp yêu cầu.");
             return;
         }
 
+        // SỬA LỖI: Thêm dấu backtick cho biến html
         let html = `🤖 Tôi tìm được ${data.data.length} phòng sát yêu cầu của bạn:<br><div style="margin-top:10px">`;
         data.data.forEach(r => {
             html += `
@@ -208,8 +186,13 @@ async function sendChat() {
                 </div>
             </div>`;
         });
-        html += `</div>`;
+        html += `</div>`; 
         addMessage(html);
+
+        if (data.data.length > 0) {
+            const advice = buildAdvice(data.data[0], data.memory);
+            if (advice) addMessage(advice);
+        }
 
     } catch (error) {
         addMessage("⚠️ Kết nối bị gián đoạn. Vui lòng thử lại!");

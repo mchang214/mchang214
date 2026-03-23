@@ -19,6 +19,7 @@ const User = require('./model/user');
 const Booking = require('./model/booking'); 
 
 const app = express();
+const chatbotMemory = {};
 
 // --- 1. KẾT NỐI MONGODB ---
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/PhongTroDB')
@@ -448,6 +449,26 @@ app.post('/book', async (req, res) => {
     }
 });
 
+app.get('/lich-hen', async (req, res) => {
+    if (!req.user) return res.redirect('/login');
+    try {
+        const userData = await User.findById(req.user._id).populate('appointments.room');
+        if (userData && userData.appointments) {
+            userData.appointments.sort((a, b) => {
+                return b._id.getTimestamp() - a._id.getTimestamp();
+            });
+        }
+
+        res.render('lich-hen', { 
+            userData, 
+            user: req.user, 
+            page: 'appointments' 
+        });
+    } catch (error) {
+        console.error("Lỗi khi lấy lịch hẹn:", error);
+        res.status(500).send("Có lỗi xảy ra khi tải lịch hẹn.");
+    }
+});
 // --- 7 ROUTES ADMIN ---
 app.get('/admin', isAdminMiddleware, async (req, res) => {
     const { search } = req.query; 
@@ -590,60 +611,94 @@ app.get('/admin/toggle/:id', isAdminMiddleware, async (req, res) => {
 app.get('/api/chatbot/search', async (req, res) => {
     try {
         res.setHeader('ngrok-skip-browser-warning', 'true');
-        const { maxPrice, locations, location, keyword, minArea, excludeKeyword } = req.query;
-        
-        // 1. Khởi tạo filter cơ bản
-        let filter = { status: true }; 
 
-        // 2. Lọc theo giá
-        if (maxPrice) filter.price = { $lte: parseInt(maxPrice) };
+        const userId = req.sessionID;
 
-        // 3. Lọc theo diện tích (Lấy các phòng >= diện tích yêu cầu)
-        if (minArea) filter.area = { $gte: parseInt(minArea) };
-
-        // 4. Lọc theo địa điểm (Hỗ trợ nhiều quận cùng lúc)
-        const targetLocations = locations || location;
-        if (targetLocations) {
-            const locArray = Array.isArray(targetLocations) ? targetLocations : [targetLocations];
-            // Sử dụng Regex để tìm kiếm linh hoạt (không phân biệt hoa thường, khớp một phần)
-            filter.location = { $in: locArray.map(l => new RegExp(l.trim(), 'i')) };
+        if (!chatbotMemory[userId]) {
+            chatbotMemory[userId] = {};
         }
 
-        // 5. Kết hợp Keyword và ExcludeKeyword để không bị ghi đè
-        let andConditions = [];
+        let memory = chatbotMemory[userId];
 
-        // Điều kiện tìm kiếm từ khóa (Nếu có)
-        if (keyword && keyword.trim() !== "") {
-            andConditions.push({
-                $or: [
-                    { title: { $regex: keyword.trim(), $options: 'i' } },
-                    { description: { $regex: keyword.trim(), $options: 'i' } }
-                ]
-            });
+        const { maxPrice, locations, location, keyword, minArea } = req.query;
+
+        // ===== UPDATE MEMORY =====
+        if (maxPrice) memory.maxPrice = parseInt(maxPrice);
+        if (minArea) memory.minArea = parseInt(minArea);
+        if (keyword) memory.keyword = keyword;
+
+        if (locations || location) {
+            memory.location = locations || location;
         }
 
-        // Điều kiện loại trừ từ khóa (Nếu có - ví dụ: "không chung chủ")
-        if (excludeKeyword && excludeKeyword.trim() !== "") {
-            const regexExclude = new RegExp(excludeKeyword.trim(), 'i');
-            andConditions.push({ title: { $not: regexExclude } });
-            andConditions.push({ description: { $not: regexExclude } });
+        // ===== BUILD FILTER FROM MEMORY =====
+        let filter = { status: true };
+
+        if (memory.maxPrice) {
+            filter.price = { $lte: memory.maxPrice };
         }
 
-        // Nếu có các điều kiện phụ thì thêm vào filter chính
-        if (andConditions.length > 0) {
-            filter.$and = andConditions;
+        if (memory.minArea) {
+            filter.area = { $gte: memory.minArea };
         }
 
-        // 6. Truy vấn (Sắp xếp giá thấp đến cao cho người dùng dễ chọn)
-        const rooms = await Room.find(filter)
-            .sort({ createdAt: -1, price: -1 }) 
-            .limit(10);
+        if (memory.location) {
+            const locArray = Array.isArray(memory.location)
+                ? memory.location
+                : [memory.location];
 
-        res.json({ success: true, data: rooms });
+            filter.location = {
+                $in: locArray.map(l => new RegExp(l, 'i'))
+            };
+        }
+
+        if (memory.keyword) {
+            filter.$or = [
+                { title: { $regex: memory.keyword, $options: 'i' } },
+                { description: { $regex: memory.keyword, $options: 'i' } }
+            ];
+        }
+
+        let rooms = await Room.find(filter);
+
+        // ===== AI SCORING =====
+        function scoreRoom(r) {
+            let score = 0;
+
+            if (memory.maxPrice && r.price <= memory.maxPrice) score += 3;
+            if (memory.minArea && r.area >= memory.minArea) score += 2;
+
+            if (memory.location) {
+                const locText = Array.isArray(memory.location)
+                    ? memory.location.join(" ")
+                    : memory.location;
+
+                if (r.location.toLowerCase().includes(locText.toLowerCase())) {
+                    score += 4;
+                }
+            }
+
+            return score;
+        }
+
+        rooms = rooms.map(r => ({
+            ...r._doc,
+            score: scoreRoom(r)
+        }));
+
+        rooms.sort((a, b) => b.score - a.score);
+
+        rooms = rooms.slice(0, 5);
+
+        res.json({
+            success: true,
+            memory: memory,
+            data: rooms
+        });
 
     } catch (err) {
-        console.error("Lỗi Chatbot API:", err);
-        res.status(500).json({ success: false, error: err.message });
+        console.error("Chatbot AI error:", err);
+        res.status(500).json({ success: false });
     }
 });
 
