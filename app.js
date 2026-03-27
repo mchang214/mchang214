@@ -325,9 +325,11 @@ app.post('/forgot-password', async (req, res) => {
         req.session.otpExpires = Date.now() + 300000;
 
         await transporter.sendMail({
+            // SỬA LỖI: Thêm dấu backtick quanh chuỗi có biến
             from: `"PHONGTROHN" <${process.env.ADMIN_EMAIL}>`,
             to: user.email,
             subject: '[PHONGTROHN] Mã xác thực OTP',
+            // SỬA LỖI: Thêm dấu backtick quanh HTML
             html: `<h3>Mã OTP của bạn là: ${otp}</h3><p>Hiệu lực trong 5 phút.</p>`
         });
         res.redirect('/verify-otp');
@@ -422,12 +424,14 @@ app.post('/book', async (req, res) => {
         });
         await newBooking.save();
 
+        // SỬA LỖI: Thêm dấu backtick cho roomLink
         const roomLink = `${req.protocol}://${req.get('host')}/room/${roomId}`;
         const formattedTime = new Date(appointmentTime).toLocaleString('vi-VN');
 
         await transporter.sendMail({
             from: '"Hệ thống Phòng Trọ" <no-reply@phongtrohn.com>',
             to: process.env.ADMIN_EMAIL,
+            // SỬA LỖI: Thêm dấu backtick cho subject
             subject: `[Lịch hẹn] ${roomCode} - ${roomTitle} - Khách: ${guestName}`,
             html: `
                 <div style="font-family: sans-serif; line-height: 1.6; border: 1px solid #eee; padding: 20px; max-width: 600px;">
@@ -442,6 +446,7 @@ app.post('/book', async (req, res) => {
 
         req.flash('message', 'Bạn đã yêu cầu xem phòng thành công!');
         req.flash('message_type', 'success');
+        // SỬA LỖI: Thêm dấu backtick cho redirect
         res.redirect(`/room/${roomId}`);
     } catch (err) {
         req.flash('message', 'Đã có lỗi xảy ra.');
@@ -486,6 +491,7 @@ app.post('/admin/add', isAdminMiddleware, upload.array('images', 10), async (req
     const finalPrice = (parseFloat(price.toString().replace(',', '.')) || 0) * 1000000;
     await Room.create({
         code, title, price: finalPrice, area, description, type, direction,
+        // SỬA LỖI: Thêm dấu backtick cho location
         location: `${address}, ${district}, Hà Nội`,
         images: req.files ? req.files.map(f => f.path) : []
     });
@@ -594,6 +600,7 @@ app.post('/admin/edit/:id', isAdminMiddleware, upload.array('images', 10), async
     const updateData = {
         title, code, area, description, type, direction,
         price: (parseFloat(price.toString().replace(',', '.')) || 0) * 1000000,
+        // SỬA LỖI: Thêm dấu backtick
         location: `${address}, ${district}, Hà Nội`
     };
     if (req.files && req.files.length > 0) updateData.images = req.files.map(f => f.path);
@@ -660,6 +667,31 @@ app.get('/api/chatbot/search', async (req, res) => {
         }
 
         let rooms = await Room.find(filter);
+
+app.get('/api/chatbot/compare', async (req, res) => {
+    try {
+
+        const text = req.query.q || ""
+
+        const keyword = new RegExp(text, 'i')
+
+        const rooms = await Room.find({
+            $or: [
+                { code: keyword },
+                { title: keyword }
+            ]
+        }).limit(2)
+
+        res.json({
+            success: true,
+            data: rooms
+        })
+
+    } catch (err) {
+        console.log(err)
+        res.json({ success: false })
+    }
+})
 
         // ===== AI SCORING =====
         function scoreRoom(r) {
@@ -732,4 +764,5 @@ app.get('/api/chatbot/search-advanced', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// SỬA LỖI: Dấu backtick cho console.log
 app.listen(PORT, () => console.log(`✅ Server: http://localhost:${PORT}`));

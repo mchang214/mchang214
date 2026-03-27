@@ -1,11 +1,10 @@
 const BASE_URL = window.location.origin;
 
 /**
- * 1. QUẢN LÝ LỊCH SỬ CHAT (Giữ nguyên)
+ * 1. QUẢN LÝ LỊCH SỬ CHAT
  */
 const getChatStorageKey = () => {
     const userId = document.getElementById("chat-user-id")?.value || 'guest';
-    // SỬA LỖI: Thêm dấu backtick quanh chuỗi có biến ${}
     return `chat_history_${userId}`;
 };
 
@@ -62,8 +61,8 @@ function addMessage(text, isUser = false, shouldSave = true) {
 
 function detectIntent(msg) {
     msg = msg.toLowerCase();
-    if (msg.includes("nên thuê") || msg.includes("phòng nào tốt")) return "ADVICE";
-    if (msg.includes("so sánh")) return "COMPARE";
+    if (msg.includes("so sánh") || msg.includes("so sanh")) return "COMPARE";
+    if (msg.includes("nên thuê") || msg.includes("phòng nào tốt") || msg.includes("tư vấn")) return "ADVICE";
     return "SEARCH";
 }
 
@@ -77,16 +76,11 @@ function buildFollowup(memory) {
 
 function buildAdvice(room, memory) {
     if (!room || !memory) return "";
-    // SỬA LỖI: Thêm dấu backtick bao quanh nội dung tin nhắn
     let msg = `🤖 Mình thấy phòng <b>${room.title}</b> phù hợp nhất với bạn vì:<br>`;
-
-    if (memory.maxPrice && room.price <= memory.maxPrice) {
-        msg += "✅ Giá nằm trong ngân sách bạn mong muốn<br>";
-    }
-    if (memory.minArea && room.area >= memory.minArea) {
-        msg += "✅ Diện tích rộng thoải mái<br>";
-    }
-    if (memory.location && room.location.toLowerCase().includes(memory.location.toString().toLowerCase())) {
+    if (memory.maxPrice && room.price <= memory.maxPrice) msg += "✅ Giá nằm trong ngân sách bạn mong muốn<br>";
+    if (memory.minArea && room.area >= memory.minArea) msg += "✅ Diện tích rộng thoải mái<br>";
+    if (memory.location && Array.isArray(memory.location) &&
+        memory.location.some(loc => room.location.toLowerCase().includes(loc.toLowerCase()))) {
         msg += "✅ Đúng khu vực bạn cần tìm<br>";
     }
     msg += "👉 Bạn muốn mình so sánh thêm phòng khác không?";
@@ -99,7 +93,6 @@ function buildAdvice(room, memory) {
 function extractInfo(message) {
     const msg = message.toLowerCase();
     let info = { maxPrice: null, minArea: null, locations: [], keyword: "", excludeKeyword: "" };
-
     const pointOfInterests = [
         { name: "ngã tư sở", areas: ["đống đa", "thanh xuân"] },
         { name: "ngã tư vọng", areas: ["hai bà trưng", "thanh xuân", "đống đa"] },
@@ -109,25 +102,20 @@ function extractInfo(message) {
         { name: "ngoại thương", areas: ["đống đa"] },
         { name: "cầu giấy", areas: ["cầu giấy"] }
     ];
-
     pointOfInterests.forEach(poi => {
         if (msg.includes(poi.name)) {
             poi.areas.forEach(a => { if (!info.locations.includes(a)) info.locations.push(a); });
         }
     });
-
     const districts = ["ba đình", "cầu giấy", "đống đa", "hai bà trưng", "hoàn kiếm", "thanh xuân", "hoàng mai", "long biên", "hà đông", "tây hồ", "nam từ liêm", "bắc từ liêm"];
     districts.forEach(d => { if (msg.includes(d) && !info.locations.includes(d)) info.locations.push(d); });
-
     const priceMatch = msg.match(/(\d+)\s*(tr|triệu|trieu)/) || msg.match(/(\d{6,})/);
     if (priceMatch) {
         const val = parseInt(priceMatch[1]);
         info.maxPrice = val < 100 ? val * 1000000 : val;
     }
-
     const areaMatch = msg.match(/(\d+)\s*(m2|mét vuông|met vuong|m²)/);
     if (areaMatch) info.minArea = parseInt(areaMatch[1]);
-
     return info;
 }
 
@@ -141,6 +129,26 @@ async function sendChat() {
 
     addMessage(text, true);
     input.value = "";
+    const intent = detectIntent(text);
+
+    if (intent === "COMPARE") {
+        addMessage("🤖 Để mình so sánh phòng cho bạn...");
+        try {
+            const keyword = text.replace("so sánh", "").replace("so sanh", "").trim();
+            const res = await fetch(`${BASE_URL}/api/chatbot/compare?q=${encodeURIComponent(keyword)}`);
+            const data = await res.json();
+            if (!data.success || data.data.length < 2) {
+                addMessage("🤖 Tôi chưa tìm thấy đủ 2 phòng để so sánh.");
+                return;
+            }
+            const r1 = data.data[0]; const r2 = data.data[1];
+            let html = `🤖 <b>So sánh nhanh:</b><br><br>🏠 <b>${r1.title}</b><br>💰 ${(r1.price/1000000).toFixed(1)} triệu<br>📐 ${r1.area} m²<br>📍 ${r1.location}<br><br>🏠 <b>${r2.title}</b><br>💰 ${(r2.price/1000000).toFixed(1)} triệu<br>📐 ${r2.area} m²<br>📍 ${r2.location}<br><br>`;
+            html += (r1.price < r2.price) ? `👉 ${r1.title} rẻ hơn<br>` : `👉 ${r2.title} rẻ hơn<br>`;
+            html += (r1.area > r2.area) ? `👉 ${r1.title} rộng hơn` : `👉 ${r2.title} rộng hơn`;
+            addMessage(html);
+        } catch (err) { addMessage("⚠️ Lỗi khi so sánh phòng."); }
+        return;
+    }
 
     const info = extractInfo(text);
     const params = new URLSearchParams();
@@ -150,33 +158,37 @@ async function sendChat() {
 
     try {
         const typingId = "typing-" + Date.now();
-        // SỬA LỖI: Thêm dấu backtick quanh addMessage chứa icon
         addMessage(`<i id="${typingId}" class="bi bi-three-dots"></i> Đang tìm phòng tốt nhất cho bạn...`);
-
-        // SỬA LỖI: Thêm dấu backtick quanh URL fetch
         const res = await fetch(`${BASE_URL}/api/chatbot/search?${params.toString()}`, {
             headers: { 'ngrok-skip-browser-warning': 'true', 'Accept': 'application/json' }
         });
-        
         const data = await res.json();
-
         const typingElem = document.getElementById(typingId)?.parentElement;
         if (typingElem) typingElem.remove();
-
-        const follow = buildFollowup(data.memory);
-        if (follow) addMessage("🤖 " + follow);
 
         if (!data.success || !data.data || data.data.length === 0) {
             addMessage("🤖 Tiếc quá, tôi chưa tìm thấy phòng nào khớp yêu cầu.");
             return;
         }
 
-        // SỬA LỖI: Thêm dấu backtick cho biến html
-        let html = `🤖 Tôi tìm được ${data.data.length} phòng sát yêu cầu của bạn:<br><div style="margin-top:10px">`;
-        data.data.forEach(r => {
+        // --- LOGIC SẮP XẾP VÀ TÌM PHÒNG GẦN GIÁ NHẤT ---
+        const sortedRooms = data.data.sort((a, b) => b.price - a.price);
+        let bestMatchRoom = sortedRooms[0];
+        if (info.maxPrice) {
+            let minDiff = Infinity;
+            sortedRooms.forEach(r => {
+                const diff = Math.abs(r.price - info.maxPrice);
+                if (diff < minDiff) { minDiff = diff; bestMatchRoom = r; }
+            });
+            addMessage(`⭐ <b>Gợi ý:</b> Phòng <b>${bestMatchRoom.title}</b> có mức giá sát với ngân sách của bạn nhất.`);
+        }
+
+        let html = `🤖 Tôi tìm được ${sortedRooms.length} phòng :<br><div style="margin-top:10px">`;
+        sortedRooms.forEach(r => {
+            const isBest = (r._id === bestMatchRoom._id) ? "border: 2px solid #ffc107;" : "border: 1px solid #ddd;";
             html += `
-            <div style="background: white; border: 1px solid #ddd; border-radius: 10px; padding: 10px; margin-bottom: 10px; color: #333; clear: both;">
-                <div style="font-weight: bold; color: #0d6efd; margin-bottom: 4px;">🏠 ${r.title}</div>
+            <div style="background: white; ${isBest} border-radius: 10px; padding: 10px; margin-bottom: 10px; color: #333; clear: both;">
+                <div style="font-weight: bold; color: #0d6efd; margin-bottom: 4px;">🏠 ${r.title} ${r._id === bestMatchRoom._id ? "⭐" : ""}</div>
                 <div style="font-size: 0.85em;">
                     💰 <b style="color: #dc3545;">${(r.price/1000000).toFixed(1)} tr</b> | 📐 <b>${r.area}m²</b><br>
                     📍 ${r.location}
@@ -189,22 +201,18 @@ async function sendChat() {
         html += `</div>`; 
         addMessage(html);
 
-        if (data.data.length > 0) {
-            const advice = buildAdvice(data.data[0], data.memory);
-            if (advice) addMessage(advice);
-        }
+        const follow = buildFollowup(data.memory);
+        if (follow) addMessage("🤖 " + follow);
+        const advice = buildAdvice(bestMatchRoom, data.memory);
+        if (advice) addMessage(advice);
 
-    } catch (error) {
-        addMessage("⚠️ Kết nối bị gián đoạn. Vui lòng thử lại!");
-    }
+    } catch (error) { addMessage("⚠️ Kết nối bị gián đoạn. Vui lòng thử lại!"); }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     loadChatHistory();
     const input = document.getElementById("chat-input");
     if (input) {
-        input.addEventListener("keypress", (e) => {
-            if (e.key === "Enter") sendChat();
-        });
+        input.addEventListener("keypress", (e) => { if (e.key === "Enter") sendChat(); });
     }
 });
