@@ -83,7 +83,7 @@ function buildAdvice(room, memory) {
         memory.location.some(loc => room.location.toLowerCase().includes(loc.toLowerCase()))) {
         msg += "✅ Đúng khu vực bạn cần tìm<br>";
     }
-    msg += "👉 Bạn muốn mình so sánh thêm phòng khác không?";
+    msg += "👉 Bạn muốn tìm thêm loại phòng khác không?";
     return msg;
 }
 
@@ -92,7 +92,38 @@ function buildAdvice(room, memory) {
  */
 function extractInfo(message) {
     const msg = message.toLowerCase();
-    let info = { maxPrice: null, minArea: null, locations: [], keyword: "", excludeKeyword: "" };
+    let info = { 
+        maxPrice: null, 
+        minArea: null, 
+        locations: [], 
+        utilities: [], 
+        excludeKeywords: [] 
+    };
+
+    // 2.1. Trích xuất các từ khóa tiện ích (Keywords)
+    const utilityMap = [
+        "ban công", "giường tầng", "gác xép", 
+        "oto đỗ cửa", "cửa sổ", "pet", "xe điện"
+    ];
+    utilityMap.forEach(util => {
+        if (msg.includes(util)) info.utilities.push(util);
+    });
+
+    // 2.2. Trích xuất từ khóa từ chối (Exclude)
+    // Ví dụ: "không ban công", "khong gác xép"
+    const denyWords = ["không", "khong", "kh", "ko", "k"];
+    denyWords.forEach(deny => {
+        utilityMap.forEach(util => {
+            const phrase = `${deny} ${util}`;
+            if (msg.includes(phrase)) {
+                info.excludeKeywords.push(util);
+                // Nếu đã vào danh sách loại trừ thì xóa khỏi danh sách yêu cầu
+                info.utilities = info.utilities.filter(u => u !== util);
+            }
+        });
+    });
+
+    // 2.3. Xử lý Địa điểm (Giữ nguyên logic cũ)
     const pointOfInterests = [
         { name: "ngã tư sở", areas: ["đống đa", "thanh xuân"] },
         { name: "ngã tư vọng", areas: ["hai bà trưng", "thanh xuân", "đống đa"] },
@@ -101,7 +132,7 @@ function extractInfo(message) {
         { name: "xây dựng", areas: ["hai bà trưng"] },
         { name: "ngoại thương", areas: ["đống đa"] },
         { name: "cầu giấy", areas: ["cầu giấy"] }
-    ];
+    ]; 
     pointOfInterests.forEach(poi => {
         if (msg.includes(poi.name)) {
             poi.areas.forEach(a => { if (!info.locations.includes(a)) info.locations.push(a); });
@@ -123,6 +154,13 @@ function extractInfo(message) {
  * 3. GỬI TIN NHẮN & GỌI API
  */
 async function sendChat() {
+    const userId = document.getElementById("chat-user-id")?.value;
+    if (!userId || userId === "" || userId === "guest") {
+        addMessage("⚠️ Bạn cần <b>đăng nhập</b> để sử dụng trợ lý ảo AI tìm phòng.", false, false);
+        // Tùy chọn: Tự động chuyển hướng sau 2 giây
+        // setTimeout(() => window.location.href = '/login', 2000);
+        return;
+    }
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
     if (!text) return;
@@ -155,6 +193,13 @@ async function sendChat() {
     if (info.maxPrice) params.append("maxPrice", info.maxPrice);
     if (info.minArea) params.append("minArea", info.minArea);
     info.locations.forEach(loc => params.append("locations", loc));
+
+    if (info.utilities.length > 0) {
+        params.append("keyword", info.utilities.join(" "));
+    }
+    if (info.excludeKeywords.length > 0) {
+        params.append("exclude", info.excludeKeywords.join(" "));
+    }
 
     try {
         const typingId = "typing-" + Date.now();

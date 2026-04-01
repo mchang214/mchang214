@@ -116,11 +116,23 @@
         <div style="background: #e9ecef; padding: 8px 12px; border-radius: 15px; align-self: flex-start; max-width: 80%;">
             Chào bạn! Tôi có thể giúp gì cho bạn trong việc tìm phòng?
         </div>
+        <% if (!user) { %>
+            <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 10px; font-size: 0.9rem; border: 1px solid #ffeeba; margin-top: 10px;">
+                <i class="bi bi-exclamation-triangle"></i> Bạn cần <a href="/login">đăng nhập</a> để trò chuyện cùng AI.
+            </div>
+        <% } %>
     </div>
-    <div id="chatbot-input">
-        <input id="chat-input" placeholder="Nhập nhu cầu của bạn...">
-        <button onclick="sendChat()"><i class="bi bi-send"></i></button>
-    </div>
+
+    <% if (user) { %>
+        <div id="chatbot-input">
+            <input id="chat-input" placeholder="Nhập nhu cầu của bạn...">
+            <button onclick="sendChat()"><i class="bi bi-send"></i></button>
+        </div>
+    <% } else { %>
+        <div id="chatbot-input" style="background: #f8f9fa; justify-content: center; align-items: center; color: #6c757d; font-size: 0.85rem; height: 50px;">
+            Vui lòng đăng nhập
+        </div>
+    <% } %>
 </div>
 
 <div class="container mt-4">

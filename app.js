@@ -187,7 +187,7 @@ app.get('/', async (req, res) => {
             ];
         }
         const locations = await Room.distinct('location');
-        const rooms = await Room.find(filter);
+        const rooms = await Room.find(filter).sort({ createdAt: -1 });
 
         res.render('index', { 
             rooms: rooms, 
@@ -476,6 +476,13 @@ app.get('/lich-hen', async (req, res) => {
 });
 // --- 7 ROUTES ADMIN ---
 app.get('/admin', isAdminMiddleware, async (req, res) => {
+
+    const isUserLoggedIn = (req, res, next) => {
+    if (req.isAuthenticated() || (req.session && req.session.user)) {
+        return next();
+    }
+    res.status(401).json({ success: false, message: "Vui lòng đăng nhập để sử dụng Chatbot!" });
+};
     const { search } = req.query; 
     let query = search ? { $or: [{ code: { $regex: search.trim(), $options: 'i' } }, { title: { $regex: search.trim(), $options: 'i' } }] } : {};
     const rooms = await Room.find(query).sort({ createdAt: -1 });
@@ -503,7 +510,7 @@ app.get('/admin/bookings', async (req, res) => {
         const rawBookings = await Booking.find().populate('room').sort({ createdAt: -1 });
         const bookings = rawBookings.map(b => {
             if (!b.room) {
-                b.room = { location: "Phòng đã bị xóa", price: 0 };
+                b.room = { _id: '#', location: "Phòng đã bị xóa", price: 0 };
             }
             return b;
         });
