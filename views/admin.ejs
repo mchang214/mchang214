@@ -1,11 +1,47 @@
 <%- include('partials/header') %>
 
+<!-- 1. THÊM THƯ VIỆN BIỂU ĐỒ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
 <div class="container mt-4 pb-5">
     <div class="bg-white p-3 rounded shadow-sm mb-4 d-flex justify-content-between align-items-center">
         <h3 class="fw-bold mb-0 text-primary"><i class="bi bi-speedometer2 me-2"></i>QUẢN TRỊ HỆ THỐNG</h3>
         <span class="badge bg-light text-dark border"><i class="bi bi-person-circle me-1"></i> Mode: Admin</span>
     </div>
 
+    <!-- 2. PHẦN BIỂU ĐỒ THỐNG KÊ (DASHBOARD) -->
+    <div class="row mb-4 g-3">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 rounded-4 p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-graph-up-arrow me-2 text-primary"></i>Tăng trưởng bài đăng</h5>
+                    <div class="d-flex gap-2">
+                        <select id="statsYear" class="form-select form-select-sm" style="width: 90px;" onchange="loadStats()">
+                            <option value="2025">2025</option>
+                            <option value="2026" selected>2026</option>
+                        </select>
+                        <select id="statsType" class="form-select form-select-sm" style="width: 120px;" onchange="loadStats()">
+                            <option value="month">Theo tháng</option>
+                            <option value="quarter">Theo quý</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="height: 300px;">
+                    <canvas id="growthChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 rounded-4 p-3 h-100">
+                <h5 class="fw-bold mb-3 text-dark"><i class="bi bi-pie-chart me-2 text-info"></i>Phân bố khu vực</h5>
+                <div style="height: 250px; display: flex; justify-content: center;">
+                    <canvas id="districtChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. FORM ĐĂNG BÀI (GIỮ NGUYÊN CỦA BẠN) -->
     <div class="card shadow-sm mb-5 border-0 rounded-4 overflow-hidden">
         <div class="card-header bg-primary text-white fw-bold py-3">
             <i class="bi bi-pencil-square me-2"></i>
@@ -77,6 +113,7 @@
         </div>
     </div>
 
+    <!-- 4. DANH SÁCH BÀI ĐĂNG (GIỮ NGUYÊN CỦA BẠN) -->
     <h4 class="mb-3 fw-bold text-dark"><i class="bi bi-list-ul me-2"></i>Danh sách bài đã đăng</h4>
     <div class="table-responsive bg-white shadow-sm rounded-4 border overflow-hidden">
         <table class="table table-hover align-middle mb-0">
@@ -150,23 +187,81 @@
     </div>
 </div>
 
+<!-- 5. SCRIPT XỬ LÝ (KẾT HỢP CODE CŨ VÀ MỚI) -->
 <script>
-function toggleDirectionField() {
-    const roomTypeSelect = document.getElementById('roomType');
-    const directionContainer = document.getElementById('directionContainer');
-    
-    if (!roomTypeSelect || !directionContainer) return;
-    const val = roomTypeSelect.value.trim();
-
-    if (val === "Chung cư" || val === "Nguyên căn") {
-        directionContainer.style.display = 'block';
-    } else {
-        directionContainer.style.display = 'none';
-        const directionField = document.getElementById('directionField');
-        if(directionField) directionField.value = "";
+    // Xử lý ẩn hiện Hướng nhà (Code cũ của bạn)
+    function toggleDirectionField() {
+        const roomTypeSelect = document.getElementById('roomType');
+        const directionContainer = document.getElementById('directionContainer');
+        if (!roomTypeSelect || !directionContainer) return;
+        const val = roomTypeSelect.value.trim();
+        if (val === "Chung cư" || val === "Nguyên căn") {
+            directionContainer.style.display = 'block';
+        } else {
+            directionContainer.style.display = 'none';
+            const directionField = document.getElementById('directionField');
+            if(directionField) directionField.value = "";
+        }
     }
-}
-document.addEventListener('DOMContentLoaded', toggleDirectionField);
+
+    // Xử lý Biểu đồ (Code mới)
+    let growthChart, districtChart;
+
+    async function loadStats() {
+        const year = document.getElementById('statsYear').value;
+        const type = document.getElementById('statsType').value;
+        try {
+            // Đảm bảo route này khớp với file backend bạn đã dán code API
+            const response = await fetch(`/api/admin/stats?year=${year}&type=${type}`);
+            const result = await response.json();
+            if (result.success) {
+                updateGrowthChart(result.labels, result.roomCounts);
+                updateDistrictChart(result.districts, result.districtCounts);
+            }
+        } catch (error) {
+            console.error("Lỗi khi tải thống kê:", error);
+        }
+    }
+
+    function updateGrowthChart(labels, data) {
+        const ctx = document.getElementById('growthChart').getContext('2d');
+        if (growthChart) growthChart.destroy();
+        growthChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Số lượng bài đăng',
+                    data: data,
+                    backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                    borderRadius: 6
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    function updateDistrictChart(labels, data) {
+        const ctx = document.getElementById('districtChart').getContext('2d');
+        if (districtChart) districtChart.destroy();
+        districtChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: ['#0d6efd', '#6610f2', '#6f42c1', '#d63384', '#dc3545', '#fd7e14', '#ffc107']
+                }]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+
+    // Chạy khi trang load xong
+    document.addEventListener('DOMContentLoaded', () => {
+        toggleDirectionField();
+        loadStats();
+    });
 </script>
 
 <style>

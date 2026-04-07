@@ -39,10 +39,16 @@ const roomSchema = new mongoose.Schema({
     mapsUrl: String,
     description: String,
     images: [String],
-    status: { type: Boolean, default: true }
+    status: { type: Boolean, default: true },
+    comments: [{
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        userName: String,
+        content: String,
+        rating: { type: Number, default: 5 },
+        createdAt: { type: Date, default: Date.now }
+    }]
 }, { timestamps: true });
 
-// Đã gỡ bỏ geometry và index 2dsphere ở đây
 
 const Room = mongoose.model('Room', roomSchema);
 module.exports = Room;
@@ -109,6 +115,14 @@ passport.use(new GoogleStrategy({
 
 // Local Variables Middleware
 app.use(async (req, res, next) => {
+    const isGetRequest = req.method === 'GET';
+    const isStaticFile = req.path.includes('.') || req.path.startsWith('/css') || req.path.startsWith('/js') || req.path.startsWith('/img');
+    const isAuthRoute = ['/login', '/register', '/auth/google', '/logout'].includes(req.path);
+    const isApiRoute = req.path.startsWith('/api');
+
+    if (isGetRequest && !isStaticFile && !isAuthRoute && !isApiRoute) {
+        req.session.returnTo = req.originalUrl;
+    }
     res.locals.user = req.user || null;
     const isRootAdmin = (req.user && (req.user.email === process.env.ADMIN_EMAIL || req.user.phone === process.env.ADMIN_PHONE));
     res.locals.isAdmin = isRootAdmin || req.session.isAdmin || (req.user && req.user.role === 'admin') || false;
@@ -141,7 +155,9 @@ app.get('/auth/google/callback',
     passport.authenticate('google', { failureRedirect: '/login' }),
     (req, res) => {
         if (!req.user.isProfileComplete) return res.redirect('/update-phone');
-        res.redirect('/');
+        const redirectTo = req.session.returnTo || '/';
+        delete req.session.returnTo; 
+        res.redirect(redirectTo);
     }
 );
 
@@ -208,6 +224,55 @@ app.get('/room/:id', async (req, res) => {
     res.render('detail', { room, page: 'detail' });
 });
 
+app.post('/room/:id/comment', async (req, res) => {
+    if (!req.isAuthenticated()) return res.redirect('/login');
+
+    try {
+        const { content, rating, anonymous, customName } = req.body;
+        const user = req.user;
+
+        // Xác định tên hiển thị
+        let displayName = user.fullname || user.name || "Người dùng";
+        if (anonymous === 'on') {
+            displayName = "Người dùng ẩn danh";
+        } else if (customName && customName.trim() !== "") {
+            displayName = customName.trim();
+        }
+
+        const room = await Room.findById(req.params.id);
+        const newComment = {
+            user: user._id,
+            userName: displayName, // Lưu tên đã chọn vào đây
+            content: content,
+            rating: parseInt(rating) || 5,
+            createdAt: new Date()
+        };
+
+        room.comments.push(newComment);
+        await room.save();
+        res.redirect(`/room/${req.params.id}`);
+    } catch (err) {
+        res.status(500).send("Lỗi gửi bình luận");
+    }
+});
+
+app.post('/room/:roomId/comment/:commentId/delete', async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).send("Từ chối truy cập");
+    
+    try {
+        const room = await Room.findById(req.params.roomId);
+        // Chỉ cho phép xóa nếu là chủ bình luận hoặc Admin
+        room.comments = room.comments.filter(c => 
+            c._id.toString() !== req.params.commentId || 
+            (c.user.toString() !== req.user._id.toString() && !req.session.isAdmin)
+        );
+        await room.save();
+        res.redirect(`/room/${req.params.roomId}`);
+    } catch (err) {
+        res.status(500).send("Lỗi xóa bình luận");
+    }
+});
+
 app.get('/login', (req, res) => res.render('login', { page: 'login' }));
 
 app.post('/login', async (req, res) => {
@@ -254,7 +319,9 @@ app.post('/login', async (req, res) => {
         if (isMatch) {
             req.login(user, (err) => {
                 if (err) return res.redirect('/login');
-                return res.redirect('/');
+                const redirectTo = req.session.returnTo || '/'; // Lấy trang cũ hoặc về trang chủ
+                delete req.session.returnTo; // Xóa ngay sau khi sử dụng để tránh nhầm lẫn lần sau
+                return res.redirect(redirectTo);
             });
         } else {
             req.flash('message', 'Mật khẩu không chính xác!');
@@ -396,6 +463,8 @@ app.get('/da-luu', async (req, res) => {
     res.render('da-luu', { userData, user: req.user, page: 'saved' });
 });
 
+
+
 app.post('/book', async (req, res) => {
     const { roomId, appointmentTime, guestName, roomCode, guestPhone, roomTitle } = req.body;
     try {
@@ -475,22 +544,46 @@ app.get('/lich-hen', async (req, res) => {
     }
 });
 // --- 7 ROUTES ADMIN ---
-app.get('/admin', isAdminMiddleware, async (req, res) => {
+app.get('/admin', isAdminMiddleware, (req, res) => {
+    res.render('admin-dashboard', { 
+        page: 'dashboard' 
+    });
+});
 
-    const isUserLoggedIn = (req, res, next) => {
-    if (req.isAuthenticated() || (req.session && req.session.user)) {
-        return next();
+app.get('/admin/list', isAdminMiddleware, async (req, res) => {
+    try {
+        const { search } = req.query; 
+        let query = search ? { 
+            $or: [
+                { code: { $regex: search.trim(), $options: 'i' } }, 
+                { title: { $regex: search.trim(), $options: 'i' } }
+            ] 
+        } : {};
+
+        const rooms = await Room.find(query).sort({ createdAt: -1 });
+
+        res.render('admin-list', { 
+            rooms, 
+            searchQuery: search || '', 
+            page: 'list' 
+        });
+    } catch (error) {
+        res.status(500).send("Lỗi Server");
     }
-    res.status(401).json({ success: false, message: "Vui lòng đăng nhập để sử dụng Chatbot!" });
-};
-    const { search } = req.query; 
-    let query = search ? { $or: [{ code: { $regex: search.trim(), $options: 'i' } }, { title: { $regex: search.trim(), $options: 'i' } }] } : {};
-    const rooms = await Room.find(query).sort({ createdAt: -1 });
-    res.render('admin-list', { rooms, searchQuery: search || '', page: 'admin-list' });
+});
+
+app.get('/admin/dashboard', isAdminMiddleware, (req, res) => {
+    res.render('admin-dashboard', { 
+        page: 'dashboard' 
+    });
 });
 
 app.get('/admin/add', isAdminMiddleware, (req, res) => {
-    res.render('admin-add', { page: 'admin-add', editRoom: null });
+    // Sử dụng admin-add.ejs để không bị dính biểu đồ
+    res.render('admin-add', { 
+        page: 'add',
+        editRoom: null 
+    });
 });
 
 app.post('/admin/add', isAdminMiddleware, upload.array('images', 10), async (req, res) => {
@@ -531,9 +624,13 @@ app.post('/admin/bookings/confirm/:id', async (req, res) => {
         const bookingId = req.params.id;
         const newStatus = (req.body && req.body.status) ? req.body.status : 'Đã xác nhận';
 
+        // PHẦN CẦN SỬA: Thêm updatedAt để Dashboard có thể lọc dữ liệu theo thời gian
         const updatedBooking = await Booking.findByIdAndUpdate(
             bookingId, 
-            { status: newStatus }, 
+            { 
+                status: newStatus,
+                updatedAt: new Date() // Cực kỳ quan trọng để Dashboard nhận diện năm 2026
+            }, 
             { new: true }
         );
 
@@ -622,6 +719,90 @@ app.get('/admin/toggle/:id', isAdminMiddleware, async (req, res) => {
     res.redirect('/admin');
 });
 
+app.get('/api/admin/stats', async (req, res) => {
+    try {
+        const { year, type } = req.query; 
+        const targetYear = parseInt(year) || 2026;
+
+        // --- 1. Thiết lập thời gian lọc (Giữ nguyên) ---
+        let startDate = new Date(`${targetYear}-01-01T00:00:00.000Z`);
+        let endDate = new Date(`${targetYear}-12-31T23:59:59.999Z`);
+        if (type) {
+            if (type.startsWith('m')) {
+                const month = parseInt(type.replace('m', '')) - 1;
+                startDate = new Date(targetYear, month, 1);
+                endDate = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
+            } else if (type.startsWith('q')) {
+                const quarter = parseInt(type.replace('q', ''));
+                startDate = new Date(targetYear, (quarter - 1) * 3, 1);
+                endDate = new Date(targetYear, quarter * 3, 0, 23, 59, 59, 999);
+            }
+        }
+
+        // --- 2. Lấy đơn hàng (Giữ nguyên) ---
+        const bookingsInPeriod = await Booking.aggregate([
+            { $match: { status: 'selected', appointmentTime: { $gte: startDate, $lte: endDate } }},
+            { $lookup: { from: 'rooms', localField: 'room', foreignField: '_id', as: 'roomInfo' }},
+            { $unwind: "$roomInfo" },
+            { $project: { 
+                guestName: 1, 
+                appointmentTime: 1, 
+                roomTitle: "$roomInfo.title",
+                price: "$roomInfo.price",
+                location: "$roomInfo.location"
+            }}
+        ]);
+
+        // --- 3. Tính toán card "Tổng phòng sở hữu" (Giữ nguyên) ---
+        const totalRoomsCount = await Room.countDocuments();
+
+        // --- 4. Sửa: Xử lý dữ liệu cho Biểu đồ Tròn (Thay cho Bubble Chart) ---
+        const getDistrictName = (loc) => {
+            if (!loc) return "Khác";
+            const parts = loc.split(',');
+            return parts.length >= 2 ? parts[parts.length - 2].trim() : loc;
+        };
+
+        const districtStats = {};
+        bookingsInPeriod.forEach(book => {
+            const name = getDistrictName(book.location);
+            if (!districtStats[name]) districtStats[name] = 0;
+            districtStats[name] += 1; // Đếm số lượng đơn chốt theo từng quận
+        });
+
+        // Chuyển đổi thành định dạng nhãn (labels) và giá trị (data) cho Chart.js
+        const pieData = {
+            labels: Object.keys(districtStats),
+            data: Object.values(districtStats)
+        };
+
+        // --- 5. Trả về kết quả (Cập nhật pieData) ---
+        res.json({
+            success: true,
+            pieData: pieData, // Dữ liệu mới cho biểu đồ tròn
+            detailedBookings: bookingsInPeriod, 
+            cards: {
+                totalRooms: totalRoomsCount,
+                totalRevenue: bookingsInPeriod.reduce((sum, b) => sum + (Number(b.price) || 0), 0),
+                availableRooms: totalRoomsCount - bookingsInPeriod.length
+            }
+        });
+
+    } catch (err) {
+        console.error("Lỗi API Stats:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/admin/visual-report', (req, res) => {
+    // Truyền đầy đủ các biến mà header.ejs yêu cầu
+    res.render('visual-report', { 
+        page: 'visual-report', // Truyền giá trị bất kỳ để không bị lỗi undefined
+        user: req.user || null, // Đảm bảo có biến user cho header
+        isAdmin: req.user ? req.user.isAdmin : false // Đảm bảo có biến isAdmin cho header
+    });
+});
+
 app.get('/api/chatbot/search', async (req, res) => {
     try {
         res.setHeader('ngrok-skip-browser-warning', 'true');
@@ -666,44 +847,70 @@ app.get('/api/chatbot/search', async (req, res) => {
             };
         }
 
+        // ===== PHẦN SỬA ĐỔI: TÌM KIẾM THEO KEYWORD TRONG CẢ TITLE, DESCRIPTION VÀ COMMENTS =====
         if (memory.keyword) {
+            const searchRegex = { $regex: memory.keyword, $options: 'i' };
             filter.$or = [
-                { title: { $regex: memory.keyword, $options: 'i' } },
-                { description: { $regex: memory.keyword, $options: 'i' } }
+                { title: searchRegex },
+                { description: searchRegex },
+                { "comments.content": searchRegex } 
             ];
         }
 
-        let rooms = await Room.find(filter);
+        let rooms = await Room.find(filter).limit(10);
+
+        // ===== PHẦN THÊM MỚI: CHẤM ĐIỂM GỢI Ý DỰA TRÊN BÌNH LUẬN =====
+        if (memory.keyword) {
+            const key = memory.keyword.toLowerCase();
+            
+            rooms = rooms.map(room => {
+                let roomObj = room.toObject();
+                // Đếm số lượng bình luận có chứa từ khóa
+                const matchCount = (roomObj.comments || []).filter(c => 
+                    c.content && c.content.toLowerCase().includes(key)
+                ).length;
+
+                // Thêm thuộc tính ảo để chatbot phản hồi thông minh hơn
+                roomObj.relevanceScore = matchCount;
+                return roomObj;
+            });
+
+            // Sắp xếp ưu tiên những phòng có khách hàng khen ngợi đúng từ khóa yêu cầu
+            rooms.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        }
+
+        // Trả về kết quả
+        res.json({
+            success: true,
+            data: rooms,
+            count: rooms.length,
+            currentCriteria: memory 
+        });
+
+    } catch (error) {
+        console.error("Chatbot Search Error:", error);
+        res.status(500).json({ success: false, message: "Lỗi xử lý tìm kiếm" });
+    }
+});
 
 app.get('/api/chatbot/compare', async (req, res) => {
     try {
+        const userId = req.sessionID;
+        const memory = chatbotMemory[userId] || {};
+        const text = req.query.q || "";
+        const keyword = new RegExp(text, 'i');
 
-        const text = req.query.q || ""
-
-        const keyword = new RegExp(text, 'i')
-
-        const rooms = await Room.find({
+        // Tìm kiếm phòng theo mã hoặc tiêu đề
+        let rooms = await Room.find({
             $or: [
                 { code: keyword },
                 { title: keyword }
             ]
-        }).limit(2)
+        });
 
-        res.json({
-            success: true,
-            data: rooms
-        })
-
-    } catch (err) {
-        console.log(err)
-        res.json({ success: false })
-    }
-})
-
-        // ===== AI SCORING =====
+        // ===== AI SCORING (Nằm bên trong hàm) =====
         function scoreRoom(r) {
             let score = 0;
-
             if (memory.maxPrice && r.price <= memory.maxPrice) score += 3;
             if (memory.minArea && r.area >= memory.minArea) score += 2;
 
@@ -716,23 +923,25 @@ app.get('/api/chatbot/compare', async (req, res) => {
                     score += 4;
                 }
             }
-
             return score;
         }
 
+        // Chấm điểm và định dạng dữ liệu trả về
         rooms = rooms.map(r => ({
             ...r._doc,
             score: scoreRoom(r)
         }));
 
+        // Sắp xếp theo điểm số cao nhất
         rooms.sort((a, b) => b.score - a.score);
 
-        rooms = rooms.slice(0, 5);
+        // Lấy tối đa 10 kết quả tốt nhất
+        const finalRooms = rooms.slice(0, 10);
 
         res.json({
             success: true,
             memory: memory,
-            data: rooms
+            data: finalRooms
         });
 
     } catch (err) {

@@ -1,0 +1,145 @@
+<%- include('partials/header') %>
+<div class="container-fluid py-4" style="background-color: #f8f9fc; min-height: 100vh;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold text-primary mb-0">Báo cáo Phân tích Trực quan</h3>
+            <p class="text-muted small">Dữ liệu tự động điều chỉnh theo doanh thu thực tế</p>
+        </div>
+        <a href="/admin/dashboard" class="btn btn-outline-secondary rounded-pill px-4 shadow-sm">
+            <i class="bi bi-arrow-left me-2"></i>Quay lại trang Thống kê
+        </a>
+    </div>
+
+    <div class="row">
+        <!-- Biểu đồ Doanh thu & Hoa hồng -->
+        <div class="col-lg-6 mb-4">
+            <div class="card border-0 shadow-sm p-3" style="border-radius: 15px;">
+                <h6 class="fw-bold mb-3 text-dark text-center">Lợi nhuận Hoa hồng & Doanh thu tổng</h6>
+                <div style="height: 320px; position: relative;">
+                    <canvas id="bigMixedChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Biểu đồ Tỷ lệ Đơn chốt theo Quận (Đã đổi sang Pie Chart) -->
+        <div class="col-lg-6 mb-4">
+            <div class="card border-0 shadow-sm p-3" style="border-radius: 15px;">
+                <h6 class="fw-bold mb-3 text-dark text-center">Tỷ lệ Đơn chốt theo Quận</h6>
+                <div style="height: 320px; position: relative;">
+                    <canvas id="bigPieChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/chart.min.js"></script>
+<script>
+    window.onload = function() {
+        const raw = localStorage.getItem('reportData');
+        if(!raw) {
+            alert("Không tìm thấy dữ liệu. Vui lòng nhấn 'Xuất biểu đồ' từ Dashboard.");
+            window.location.href = '/admin/dashboard';
+            return;
+        }
+        
+        const data = JSON.parse(raw);
+
+        // Ép kiểu dữ liệu về Number
+        const commissionValues = (data.commissionData || []).map(v => Number(v) || 0);
+        const revenueValues = (data.revenueData || []).map(v => Number(v) || 0);
+
+        // 1. Vẽ Biểu đồ Mixed (Doanh thu & Hoa hồng)
+        new Chart(document.getElementById('bigMixedChart'), {
+            type: 'bar',
+            data: {
+                labels: data.labels,
+                datasets: [
+                    {
+                        label: 'Hoa hồng (đ)',
+                        data: commissionValues,
+                        backgroundColor: '#4e73df',
+                        yAxisID: 'y',
+                        order: 2
+                    },
+                    {
+                        label: 'Doanh thu (đ)',
+                        data: revenueValues,
+                        type: 'line',
+                        borderColor: '#1cc88a',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        yAxisID: 'y1',
+                        order: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { 
+                        beginAtZero: true, 
+                        position: 'left',
+                        title: { display: true, text: 'Tiền Hoa hồng' },
+                        ticks: { callback: v => v.toLocaleString() + 'đ' }
+                    },
+                    y1: { 
+                        beginAtZero: true, 
+                        position: 'right',
+                        grid: { display: false },
+                        title: { display: true, text: 'Tổng Doanh thu' },
+                        ticks: { callback: v => v.toLocaleString() + 'đ' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}đ`
+                        }
+                    }
+                }
+            }
+        });
+
+        // 2. Vẽ Biểu đồ Tròn (Dữ liệu Quận từ pieData)
+        if (data.pieData) {
+            new Chart(document.getElementById('bigPieChart'), {
+                type: 'pie',
+                data: {
+                    labels: data.pieData.labels,
+                    datasets: [{
+                        data: data.pieData.data,
+                        backgroundColor: [
+                            '#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b', 
+                            '#858796', '#5a5c69', '#2e59d9', '#17a673', '#2c9faf'
+                        ],
+                        hoverOffset: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { usePointStyle: true, padding: 20 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = Math.round((value / total) * 100);
+                                    return ` Quận ${label}: ${value} đơn (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+</script>
+<%- include('partials/footer') %>

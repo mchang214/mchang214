@@ -10,9 +10,9 @@ const bookingSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, 
     isGuest: { type: Boolean, default: false }, 
     status: { 
-        type: String, 
-        enum: ['Chờ xác nhận', 'Đã gửi SĐT', 'Đã đi xem phòng', 'Đã chốt'],
-        default: 'Chờ xác nhận' 
+            type: String, 
+            enum: ['Chờ xác nhận', 'Đã gửi SĐT', 'Đã đi xem phòng', 'selected'], // Thêm 'selected' vào đây
+            default: 'Chờ xác nhận' 
     }
 }, { 
     timestamps: true 

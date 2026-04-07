@@ -1,0 +1,206 @@
+<%- include('partials/header') %>
+
+<style>
+    .stat-card { border: none; border-radius: 15px; transition: transform 0.3s; color: white; }
+    .stat-card:hover { transform: translateY(-5px); }
+    .bg-grad-blue { background: linear-gradient(45deg, #4e73df, #224abe); }
+    .bg-grad-green { background: linear-gradient(45deg, #1cc88a, #13855c); }
+    .bg-grad-orange { background: linear-gradient(45deg, #f6c23e, #dda20a); }
+    .bg-grad-red { background: linear-gradient(45deg, #e74a3b, #be2617); }
+    .table-container { background: white; border-radius: 15px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .commission-percent-input { border: 1px solid #ddd; border-radius: 5px; width: 80px !important; }
+</style>
+
+<div class="container-fluid py-4" style="background-color: #f4f6f9;">
+    <!-- HEADER & FILTER -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold text-dark">Hệ thống Quản trị Doanh thu</h2>
+        <div class="d-flex gap-2">
+            <select id="filterTime" class="form-select border-0 shadow-sm" style="width: 160px;">
+                <option value="">Cả năm</option>
+                <optgroup label="Theo Tháng">
+                    <% for(let i=1; i<=12; i++) { %>
+                        <option value="m<%=i%>">Tháng <%=i%></option>
+                    <% } %>
+                </optgroup>
+                <optgroup label="Theo Quý">
+                    <option value="q1">Quý 1</option>
+                    <option value="q2">Quý 2</option>
+                    <option value="q3">Quý 3</option>
+                    <option value="q4">Quý 4</option>
+                </optgroup>
+            </select>
+            
+            <input type="number" id="filterYear" class="form-control border-0 shadow-sm" value="2026" style="width: 100px;">
+            <button class="btn btn-primary rounded-pill px-4" onclick="loadDetailedData()">Lọc</button>
+        </div>
+    </div>
+
+    <!-- 4 THẺ THỐNG KÊ -->
+    <div class="row mb-4">
+        <div class="col-md-3"><div class="card stat-card bg-grad-blue shadow"><div class="card-body text-center"><p class="mb-1 opacity-75">Tổng phòng sở hữu</p><h3 id="card-total" class="fw-bold">0</h3></div></div></div>
+        <div class="col-md-3"><div class="card stat-card bg-grad-green shadow"><div class="card-body text-center"><p class="mb-1 opacity-75">Doanh thu chốt</p><h3 id="card-revenue" class="fw-bold">0đ</h3></div></div></div>
+        <div class="col-md-3"><div class="card stat-card bg-grad-orange shadow"><div class="card-body text-center"><p class="mb-1 opacity-75 text-dark">Hoa hồng thực nhận</p><h3 id="card-commission" class="fw-bold text-dark">0đ</h3></div></div></div>
+        <div class="col-md-3"><div class="card stat-card bg-grad-red shadow"><div class="card-body text-center"><p class="mb-1 opacity-75">Phòng đang trống</p><h3 id="card-available" class="fw-bold">0</h3></div></div></div>
+    </div>
+
+    <!-- BẢNG NHẬP HOA HỒNG CHI TIẾT -->
+    <div class="table-container shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold m-0"><i class="bi bi-table me-2"></i>Danh sách chốt đơn & Nhập hoa hồng</h5>
+            <button class="btn btn-success rounded-pill px-4" onclick="generateVisuals()">
+                <i class="bi bi-bar-chart-line-fill me-1"></i> Xuất biểu đồ & Lưu dữ liệu
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Khách hàng</th>
+                        <th>Phòng</th>
+                        <th>Giá thuê</th>
+                        <th>Ngày hẹn</th>
+                        <th>Hoa hồng Admin (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="bookingListData">
+                    <tr><td colspan="5" class="text-center text-muted py-4">Nhấn "Lọc" để lấy dữ liệu đơn hàng...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let rawBookings = [];
+    let serverPieData = null; // Chuyển từ Bubble sang Pie
+
+    // 1. Load dữ liệu từ Server
+    async function loadDetailedData() {
+        const type = document.getElementById('filterTime').value;
+        const year = document.getElementById('filterYear').value;
+
+        try {
+            const res = await fetch(`/api/admin/stats?type=${type}&year=${year}`);
+            const data = await res.json();
+            
+            console.log("Dữ liệu nhận từ API:", data);
+
+            if (data.success) {
+                document.getElementById('card-total').innerText = data.cards?.totalRooms || 0;
+                document.getElementById('card-revenue').innerText = (data.cards?.totalRevenue || 0).toLocaleString() + 'đ';
+                document.getElementById('card-available').innerText = data.cards?.availableRooms || 0;
+                
+                rawBookings = data.detailedBookings || [];
+                serverPieData = data.pieData || null; // Lưu pieData từ Backend gửi về
+
+                renderTable(); 
+            }
+        } catch (err) {
+            console.error("Lỗi khi tải dữ liệu:", err);
+            alert("Lỗi kết nối API!");
+        }
+    }
+
+    // 2. Cập nhật con số hoa hồng trên Card
+    function updateCommissionCard() {
+        const inputs = document.querySelectorAll('.commission-percent-input');
+        let totalAdminCommission = 0;
+
+        inputs.forEach(input => {
+            const price = parseFloat(input.dataset.price) || 0;
+            const percent = parseFloat(input.value) || 0;
+            totalAdminCommission += (price * percent) / 100;
+        });
+
+        const cardComm = document.getElementById('card-commission');
+        if (cardComm) {
+            cardComm.innerText = Math.round(totalAdminCommission).toLocaleString('vi-VN') + 'đ';
+        }
+    }
+
+    // 3. Hiển thị bảng
+    function renderTable() {
+        const tbody = document.getElementById('bookingListData');
+        if(!rawBookings || rawBookings.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4">Không có dữ liệu.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = rawBookings.map(item => {
+            const savedPercent = localStorage.getItem(`comm_${item._id}`) || "";
+            const dateStr = item.appointmentTime || item.date || item.createdAt;
+            const dateObj = new Date(dateStr);
+            const isValidDate = !isNaN(dateObj.getTime());
+            
+            const monthForChart = isValidDate ? (dateObj.getMonth() + 1) : 1; 
+            const displayDate = isValidDate ? dateObj.toLocaleDateString('vi-VN') : "Chưa có ngày";
+
+            const guestName = item.guestName || item.customerName || "Khách hàng";
+            const roomTitle = item.roomTitle || item.title || "Phòng cho thuê";
+            const price = item.price || item.totalPrice || 0;
+
+            return `
+                <tr>
+                    <td><div class="fw-bold">${guestName}</div></td>
+                    <td><span class="badge bg-light text-dark border">${roomTitle}</span></td>
+                    <td class="text-success fw-bold">${Number(price).toLocaleString()}đ</td>
+                    <td>${displayDate}</td>
+                    <td>
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control commission-percent-input" 
+                                data-id="${item._id}"
+                                data-month="${monthForChart}" 
+                                data-price="${price}" 
+                                value="${savedPercent}"
+                                min="0" max="100"
+                                oninput="savePercent('${item._id}', this.value)">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        
+        updateCommissionCard();
+    }
+
+    function savePercent(id, val) {
+        localStorage.setItem(`comm_${id}`, val);
+        updateCommissionCard();
+    }
+
+    function generateVisuals() {
+        const inputs = document.querySelectorAll('.commission-percent-input');
+        if (inputs.length === 0) {
+            alert("Vui lòng lọc dữ liệu trước!");
+            return;
+        }
+
+        const monthlyStats = {};
+        for (let i = 1; i <= 12; i++) monthlyStats[i] = { revenue: 0, commission: 0 };
+
+        inputs.forEach(input => {
+            const m = parseInt(input.dataset.month);
+            const price = parseFloat(input.dataset.price) || 0;
+            const percent = parseFloat(input.value) || 0;
+            
+            if (!isNaN(m) && monthlyStats[m]) {
+                monthlyStats[m].revenue += price;
+                monthlyStats[m].commission += (price * percent) / 100;
+            }
+        });
+
+        const reportData = {
+            labels: Object.keys(monthlyStats).map(m => "T" + m),
+            commissionData: Object.values(monthlyStats).map(obj => obj.commission),
+            revenueData: Object.values(monthlyStats).map(obj => obj.revenue),
+            pieData: serverPieData // Chuyển pieData sang trang báo cáo
+        };
+
+        localStorage.setItem('reportData', JSON.stringify(reportData));
+        window.location.href = '/admin/visual-report';
+    }
+</script>
+
+<%- include('partials/footer') %>

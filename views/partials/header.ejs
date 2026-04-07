@@ -86,12 +86,20 @@
                         <a class="nav-link <%= (page === 'home') ? 'active-page' : '' %>" href="/">Trang chủ</a>
                     </li>
                     <% if (user && isAdmin) { %>
+                        <!-- THÊM MỚI: Mục Thống kê -->
+                        <li class="nav-item">
+                            <a class="nav-link <%= (page === 'dashboard') ? 'active-page' : '' %>" href="/admin/dashboard">Thống kê</a>
+                        </li>
+                        
                         <li class="nav-item">
                             <a class="nav-link <%= (page === 'admin-add') ? 'active-page' : '' %>" href="/admin/add">Đăng bài</a>
                         </li>
+
+                        <!-- LƯU Ý: Đổi href của Bài đã đăng từ /admin thành /admin/list để đúng logic trang riêng -->
                         <li class="nav-item">
-                            <a class="nav-link <%= (page === 'admin-list') ? 'active-page' : '' %>" href="/admin">Bài đã đăng</a>
+                            <a class="nav-link <%= (page === 'admin-list') ? 'active-page' : '' %>" href="/admin/list">Bài đã đăng</a>
                         </li>
+                        
                         <li class="nav-item">
                             <a class="nav-link <%= (page === 'admin-bookings') ? 'active-page' : '' %>" href="/admin/bookings">
                                 Lịch hẹn khách 

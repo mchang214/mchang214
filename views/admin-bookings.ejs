@@ -90,18 +90,25 @@
 
                                     <td class="text-center">
                                         <% if (book.status === 'Chờ xác nhận') { %>
+                                            <!-- Sửa 'Đã xác nhận' thành 'confirmed' -->
                                             <button class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" 
-                                                    onclick="confirmBooking('<%= book._id %>', 'Đã xác nhận')">
+                                                    onclick="confirmBooking('<%= book._id %>', 'confirmed')">
                                                 Xác nhận ngay
                                             </button>
                                         <% } else { %>
                                             <select class="form-select form-select-sm border-primary text-primary mx-auto" 
                                                     style="width: 150px; font-size: 0.8rem;"
                                                     onchange="confirmBooking('<%= book._id %>', this.value)">
-                                                <option value="Đã xác nhận" <%= book.status === 'Đã xác nhận' ? 'selected' : '' %>>-- Tiến độ --</option>
-                                                <option value="Đã gửi SĐT" <%= book.status === 'Đã gửi SĐT' ? 'selected' : '' %>>📞 Đã gửi SĐT</option>
-                                                <option value="Đã đi xem phòng" <%= book.status === 'Đã đi xem phòng' ? 'selected' : '' %>>🏠 Đã đi xem</option>
-                                                <option value="Đã chốt" <%= book.status === 'Đã chốt' ? 'selected' : '' %>>✅ Đã chốt</option>
+                                                
+                                                <!-- Option mặc định khi vừa xác nhận xong -->
+                                                <option value="confirmed" <%= book.status === 'confirmed' ? 'selected' : '' %>>-- Tiến độ --</option>    
+                                                
+                                                <option value="sent_phone" <%= book.status === 'sent_phone' ? 'selected' : '' %>>📞 Đã gửi SĐT</option>
+                                                
+                                                <option value="viewed" <%= book.status === 'viewed' ? 'selected' : '' %>>🏠 Đã đi xem</option>
+                                                
+                                                <!-- Giá trị 'selected' này sẽ giúp Dashboard nhảy số doanh thu -->
+                                                <option value="selected" <%= book.status === 'selected' ? 'selected' : '' %>>✅ Đã chốt</option>
                                             </select>
                                         <% } %>
                                     </td>

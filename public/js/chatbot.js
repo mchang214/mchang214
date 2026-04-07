@@ -1,12 +1,16 @@
-const BASE_URL = window.location.origin;
+if (typeof BASE_URL === 'undefined') {
+    window.BASE_URL = window.location.origin;
+}
 
 /**
  * 1. QUẢN LÝ LỊCH SỬ CHAT
  */
-const getChatStorageKey = () => {
-    const userId = document.getElementById("chat-user-id")?.value || 'guest';
-    return `chat_history_${userId}`;
-};
+if (typeof getChatStorageKey === 'undefined') {
+    window.getChatStorageKey = () => {
+        // Nội dung hàm của bạn ở đây
+        return 'chat_storage_key'; 
+    };
+}
 
 function saveChatHistory(text, isUser) {
     const STORAGE_KEY = getChatStorageKey();
@@ -79,6 +83,12 @@ function buildAdvice(room, memory) {
     let msg = `🤖 Mình thấy phòng <b>${room.title}</b> phù hợp nhất với bạn vì:<br>`;
     if (memory.maxPrice && room.price <= memory.maxPrice) msg += "✅ Giá nằm trong ngân sách bạn mong muốn<br>";
     if (memory.minArea && room.area >= memory.minArea) msg += "✅ Diện tích rộng thoải mái<br>";
+    
+    // THÊM: Khen dựa trên đánh giá bình luận
+    if (memory.keyword && room.relevanceScore > 0) {
+        msg += `✅ Được nhiều người thuê trước khen là rất <b>${memory.keyword}</b><br>`;
+    }
+
     if (memory.location && Array.isArray(memory.location) &&
         memory.location.some(loc => room.location.toLowerCase().includes(loc.toLowerCase()))) {
         msg += "✅ Đúng khu vực bạn cần tìm<br>";
@@ -97,7 +107,8 @@ function extractInfo(message) {
         minArea: null, 
         locations: [], 
         utilities: [], 
-        excludeKeywords: [] 
+        excludeKeywords: [],
+        keyword: ""
     };
 
     // 2.1. Trích xuất các từ khóa tiện ích (Keywords)
@@ -109,21 +120,26 @@ function extractInfo(message) {
         if (msg.includes(util)) info.utilities.push(util);
     });
 
+    const commonKeywords = ["an ninh", "sạch sẽ", "yên tĩnh", "thoáng", "chủ nhà", "gần chợ", "điện nước"];
+    commonKeywords.forEach(word => {
+        if (msg.includes(word)) info.keyword = word; 
+    });
+    // Nếu không khớp từ khóa mẫu nhưng có yêu cầu đặc biệt, lấy utility làm keyword
+    if (!info.keyword && info.utilities.length > 0) info.keyword = info.utilities[0];
+
     // 2.2. Trích xuất từ khóa từ chối (Exclude)
-    // Ví dụ: "không ban công", "khong gác xép"
     const denyWords = ["không", "khong", "kh", "ko", "k"];
     denyWords.forEach(deny => {
         utilityMap.forEach(util => {
             const phrase = `${deny} ${util}`;
             if (msg.includes(phrase)) {
                 info.excludeKeywords.push(util);
-                // Nếu đã vào danh sách loại trừ thì xóa khỏi danh sách yêu cầu
                 info.utilities = info.utilities.filter(u => u !== util);
             }
         });
     });
 
-    // 2.3. Xử lý Địa điểm (Giữ nguyên logic cũ)
+    // 2.3. Xử lý Địa điểm
     const pointOfInterests = [
         { name: "ngã tư sở", areas: ["đống đa", "thanh xuân"] },
         { name: "ngã tư vọng", areas: ["hai bà trưng", "thanh xuân", "đống đa"] },
@@ -140,6 +156,7 @@ function extractInfo(message) {
     });
     const districts = ["ba đình", "cầu giấy", "đống đa", "hai bà trưng", "hoàn kiếm", "thanh xuân", "hoàng mai", "long biên", "hà đông", "tây hồ", "nam từ liêm", "bắc từ liêm"];
     districts.forEach(d => { if (msg.includes(d) && !info.locations.includes(d)) info.locations.push(d); });
+    
     const priceMatch = msg.match(/(\d+)\s*(tr|triệu|trieu)/) || msg.match(/(\d{6,})/);
     if (priceMatch) {
         const val = parseInt(priceMatch[1]);
@@ -157,8 +174,6 @@ async function sendChat() {
     const userId = document.getElementById("chat-user-id")?.value;
     if (!userId || userId === "" || userId === "guest") {
         addMessage("⚠️ Bạn cần <b>đăng nhập</b> để sử dụng trợ lý ảo AI tìm phòng.", false, false);
-        // Tùy chọn: Tự động chuyển hướng sau 2 giây
-        // setTimeout(() => window.location.href = '/login', 2000);
         return;
     }
     const input = document.getElementById("chat-input");
@@ -194,9 +209,11 @@ async function sendChat() {
     if (info.minArea) params.append("minArea", info.minArea);
     info.locations.forEach(loc => params.append("locations", loc));
 
-    if (info.utilities.length > 0) {
-        params.append("keyword", info.utilities.join(" "));
-    }
+    // SỬA: Gộp keyword thông minh để gửi lên Server
+    let finalKeywords = [...info.utilities];
+    if (info.keyword && !finalKeywords.includes(info.keyword)) finalKeywords.push(info.keyword);
+    if (finalKeywords.length > 0) params.append("keyword", finalKeywords.join(" "));
+
     if (info.excludeKeywords.length > 0) {
         params.append("exclude", info.excludeKeywords.join(" "));
     }
@@ -204,6 +221,7 @@ async function sendChat() {
     try {
         const typingId = "typing-" + Date.now();
         addMessage(`<i id="${typingId}" class="bi bi-three-dots"></i> Đang tìm phòng tốt nhất cho bạn...`);
+        
         const res = await fetch(`${BASE_URL}/api/chatbot/search?${params.toString()}`, {
             headers: { 'ngrok-skip-browser-warning': 'true', 'Accept': 'application/json' }
         });
@@ -216,24 +234,36 @@ async function sendChat() {
             return;
         }
 
-        // --- LOGIC SẮP XẾP VÀ TÌM PHÒNG GẦN GIÁ NHẤT ---
-        const sortedRooms = data.data.sort((a, b) => b.price - a.price);
+        // --- SẮP XẾP ƯU TIÊN THEO ĐIỂM BÌNH LUẬN TRƯỚC, SAU ĐÓ ĐẾN GIÁ ---
+        const sortedRooms = data.data; 
         let bestMatchRoom = sortedRooms[0];
+        
         if (info.maxPrice) {
+            // Lấy nhóm các phòng có cùng điểm liên quan cao nhất
+            let topScoreRooms = sortedRooms.filter(r => (r.relevanceScore || 0) === (bestMatchRoom.relevanceScore || 0));
             let minDiff = Infinity;
-            sortedRooms.forEach(r => {
+            topScoreRooms.forEach(r => {
                 const diff = Math.abs(r.price - info.maxPrice);
-                if (diff < minDiff) { minDiff = diff; bestMatchRoom = r; }
+                if (diff < minDiff) { 
+                    minDiff = diff; 
+                    bestMatchRoom = r; 
+                }
             });
-            addMessage(`⭐ <b>Gợi ý:</b> Phòng <b>${bestMatchRoom.title}</b> có mức giá sát với ngân sách của bạn nhất.`);
         }
 
-        let html = `🤖 Tôi tìm được ${sortedRooms.length} phòng :<br><div style="margin-top:10px">`;
+        // Thông báo đặc biệt nếu tìm thấy theo bình luận
+        if (bestMatchRoom.relevanceScore > 0 && info.keyword) {
+            addMessage(`⭐ <b>Gợi ý hàng đầu:</b> Phòng <b>${bestMatchRoom.title}</b> được đánh giá rất cao về "<b>${info.keyword}</b>" từ người thuê trước.`);
+        }
+
+        let html = `🤖 Tôi tìm được ${sortedRooms.length} phòng phù hợp nhất:<br><div style="margin-top:10px">`;
         sortedRooms.forEach(r => {
             const isBest = (r._id === bestMatchRoom._id) ? "border: 2px solid #ffc107;" : "border: 1px solid #ddd;";
+            const commentTag = (r.relevanceScore > 0) ? `<span style="font-size:10px; background:#e8f5e9; color:#2e7d32; padding:2px 5px; border-radius:4px; margin-left:5px; font-weight:bold;">👍 Đánh giá tốt</span>` : "";
+            
             html += `
             <div style="background: white; ${isBest} border-radius: 10px; padding: 10px; margin-bottom: 10px; color: #333; clear: both;">
-                <div style="font-weight: bold; color: #0d6efd; margin-bottom: 4px;">🏠 ${r.title} ${r._id === bestMatchRoom._id ? "⭐" : ""}</div>
+                <div style="font-weight: bold; color: #0d6efd; margin-bottom: 4px;">🏠 ${r.title} ${r._id === bestMatchRoom._id ? "⭐" : ""} ${commentTag}</div>
                 <div style="font-size: 0.85em;">
                     💰 <b style="color: #dc3545;">${(r.price/1000000).toFixed(1)} tr</b> | 📐 <b>${r.area}m²</b><br>
                     📍 ${r.location}
@@ -246,12 +276,17 @@ async function sendChat() {
         html += `</div>`; 
         addMessage(html);
 
-        const follow = buildFollowup(data.memory);
+        // Hiển thị gợi ý tiếp theo
+        const follow = buildFollowup(data.currentCriteria); // Dùng currentCriteria từ API trả về
         if (follow) addMessage("🤖 " + follow);
-        const advice = buildAdvice(bestMatchRoom, data.memory);
+        
+        const advice = buildAdvice(bestMatchRoom, data.currentCriteria);
         if (advice) addMessage(advice);
 
-    } catch (error) { addMessage("⚠️ Kết nối bị gián đoạn. Vui lòng thử lại!"); }
+    } catch (error) { 
+        console.error(error);
+        addMessage("⚠️ Kết nối bị gián đoạn. Vui lòng thử lại!"); 
+    }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
